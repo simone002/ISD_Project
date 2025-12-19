@@ -288,6 +288,3 @@ Per problemi o domande, contattare il team di sviluppo o consultare la documenta
 ---
 
 **Ultimo aggiornamento**: Dicembre 2025
-#   I S D _ P r o j e c t 
- 
- 
