@@ -22,7 +22,7 @@ public class HeliosClient {
         boolean running = true;
 
         System.out.println("==========================================");
-        System.out.println("   HELIOS CLIENT - SECURE ENTERPRISE      ");
+        System.out.println("   HELIOS CLIENT   ");
         System.out.println("==========================================");
 
         while (running) {
@@ -81,8 +81,8 @@ public class HeliosClient {
 
     private static void printMenu() {
         System.out.println("\nMENU PRINCIPALE:");
-        if (jwtToken != null) System.out.println("✅ LOGGATO (Token Attivo)");
-        else System.out.println("⛔ NON LOGGATO (Accesso Limitato)");
+        if (jwtToken != null) System.out.println("LOGGATO (Token Attivo)");
+        else System.out.println("NON LOGGATO (Accesso Limitato)");
         
         System.out.println("0. LOGIN (Richiesto!)");
         System.out.println("1. Report Semplice");
@@ -118,10 +118,10 @@ public class HeliosClient {
                 String body = response.body();
                 if(body.contains(":")) {
                     jwtToken = body.split(":")[1].replace("\"", "").replace("}", "").trim();
-                    System.out.println("✅ LOGIN RIUSCITO! Token salvato.");
+                    System.out.println("LOGIN RIUSCITO! Token salvato.");
                 }
             } else {
-                System.out.println("❌ Login Fallito: " + response.statusCode());
+                System.out.println("Login Fallito: " + response.statusCode());
             }
         } catch (Exception e) {
             System.out.println("Errore Login: " + e.getMessage());
@@ -129,7 +129,7 @@ public class HeliosClient {
     }
 
     private static void setSessionFilter(Scanner scanner) {
-        if(jwtToken == null) { System.out.println("⚠️ LOGIN RICHIESTO!"); return; }
+        if(jwtToken == null) { System.out.println("LOGIN RICHIESTO!"); return; }
 
         System.out.print("Inserisci Data Inizio (YYYY-MM-DD): ");
         String start = scanner.nextLine();
@@ -164,7 +164,7 @@ public class HeliosClient {
 
     private static void sendGetRequest(String endpoint) {
         if(jwtToken == null) { 
-            System.out.println("⛔ ERRORE: Devi fare il LOGIN (Opzione 0) prima!"); 
+            System.out.println("ERRORE: Devi fare il LOGIN (Opzione 0) prima!"); 
             return; 
         }
 
@@ -195,7 +195,7 @@ public class HeliosClient {
     }
 
     private static void handleRequestWithDates(Scanner scanner, String endpointBase) {
-        if(jwtToken == null) { System.out.println("⚠️ LOGIN RICHIESTO!"); return; }
+        if(jwtToken == null) { System.out.println("LOGIN RICHIESTO!"); return; }
 
         System.out.println("Premi INVIO per analizzare TUTTO lo storico,");
         System.out.println("oppure inserisci le date per un periodo specifico.");

@@ -39,6 +39,7 @@ public class EnergyController {
 
     @PostMapping("/session/filter")
     public String setSessionFilter(@RequestParam String start, @RequestParam String end) {
+        
         try {
             userSession.setRange(LocalDate.parse(start), LocalDate.parse(end));
             return "Filtro sessione attivato: dal " + start + " al " + end;
@@ -47,7 +48,7 @@ public class EnergyController {
         }
     }
 
-    @GetMapping("/daily-report-session")
+    @GetMapping("/daily-report-session") 
     public List<DailyReportDTO> getDailyReportsWithSession() {
         List<RenewableData> allData = repository.findAll();
 
