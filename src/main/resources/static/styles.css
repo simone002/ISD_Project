@@ -270,6 +270,15 @@ button:hover {
   color: var(--muted);
 }
 
+.chart-container {
+  height: 260px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(3, 8, 15, 0.72);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
 .table-wrap {
   overflow: auto;
 }
@@ -291,6 +300,46 @@ th {
   font-size: 0.83rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.page-btn {
+  width: auto;
+  padding: 9px 18px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: rgba(118, 247, 197, 0.15);
+  border-color: rgba(118, 247, 197, 0.35);
+  color: var(--accent);
+}
+
+.page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.page-info {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
 }
 
 .status-good {

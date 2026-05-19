@@ -93,7 +93,7 @@
 \begin{abstract}
 Il progetto descrive l'architettura, le scelte progettuali e l'implementazione di \textbf{Helios}, un sistema software distribuito per la gestione intelligente di impianti di produzione energetica rinnovabile. Il sistema simula uno scenario reale di monitoraggio per una Comunità Energetica (CER) o un impianto industriale, gestendo volumi di dati significativi (oltre 225 MWh annui).
 
-L'architettura segue il modello Client-Server RESTful, implementando pattern avanzati quali \textit{Remote Facade}, \textit{DTO}, \textit{Session State} e \textit{Request Batch}. Particolare attenzione è stata posta alla sicurezza (tramite protocollo JWT) e all'integrazione di sistemi di Intelligenza Artificiale Generativa (LLM) per il supporto decisionale.
+L'architettura segue il modello Client-Server RESTful, implementando pattern avanzati quali \textit{Remote Facade}, \textit{Remote Proxy}, \textit{DTO}, \textit{Session State} e \textit{Request Batch}. Particolare attenzione è stata posta alla sicurezza (tramite protocollo JWT) e all'integrazione di sistemi di Intelligenza Artificiale Generativa (LLM) per il supporto decisionale.
 \end{abstract}
 
 \tableofcontents
@@ -145,7 +145,7 @@ Il sistema è basato su un'architettura distribuita a due livelli (Two-Tier), pr
     % Posizionamento Nodi
     \node [component] (client) {\textbf{Client CLI}\\(Java)};
     \node [component, right=3cm of client] (server) {\textbf{Server Backend}\\(Spring Boot)};
-    \node [database, below=1.5cm of server] (db) {H2 DB\\(Data)};
+    \node [database, below=1.5cm of server] (db) {PostgreSQL\\(Docker)};
     \node [external, right=2.5cm of server] (llm) {Ollama\\(LLM)};
 
     % Connessioni
@@ -166,7 +166,7 @@ Il sistema è basato su un'architettura distribuita a due livelli (Two-Tier), pr
 Il cuore del sistema è sviluppato in \textbf{Java} utilizzando il framework \textbf{Spring Boot}. Espone una serie di API RESTful che fungono da interfaccia per qualsiasi client autorizzato.
 \begin{itemize}
     \item \textbf{Tecnologie:} Java 21, Spring Boot 3.5.8, Spring Security, JPA/Hibernate, Lombok.
-    \item \textbf{Database:} H2 Database (In-Memory) per la persistenza veloce dei dati durante la simulazione.
+    \item \textbf{Database:} PostgreSQL 16 (containerizzato via Docker) per la persistenza dei dati energetici.
     \item \textbf{Integrazione AI:} Modulo di comunicazione HTTP con \textbf{Ollama} (Llama 3.2 / Mistral) per l'elaborazione del linguaggio naturale.
 \end{itemize}
 
@@ -197,7 +197,7 @@ Il componente centrale che exposifica tutti gli endpoint di business logic. Rice
 \end{itemize}
 
 \paragraph{RenewableRepository}
-Interfaccia JPA che incapsula le operazioni di query al database H2. Offre metodi per filtrare dati per range temporale e recuperare tutti i dati.
+Interfaccia JPA che incapsula le operazioni di query al database PostgreSQL. Offre metodi per filtrare dati per range temporale e recuperare tutti i dati.
 \begin{itemize}
     \item \textbf{Metodi Chiave:} \texttt{findAll()}, \texttt{findByDateTimeBetween(start, end)}.
     \item \texttt{Hibernate} genera automaticamente le query SQL ottimizzate.
@@ -681,6 +681,106 @@ Per poter utilizzare questa funzionalità, è necessario:
 
 Modelli alternativi compatibili: \texttt{mistral}, \texttt{neural-chat}, \texttt{codellama}.
 
+\section{Remote Proxy}
+
+\subsection{Definizione e Contesto}
+Il pattern \textbf{Remote Proxy} (GoF - Structural) fornisce un surrogato locale di un oggetto che risiede su un sistema remoto. Il proxy gestisce tutta la comunicazione di rete in modo trasparente, così il codice chiamante interagisce con esso come se fosse un oggetto locale.
+
+La distinzione con il \textbf{Remote Facade} è fondamentale:
+\begin{itemize}
+    \item \textbf{Remote Proxy:} rappresenta un \textit{singolo} oggetto remoto, nascondendo la complessità della rete. L'interfaccia è identica (o analoga) a quella dell'oggetto reale.
+    \item \textbf{Remote Facade:} riduce il numero di round-trip aggregando \textit{più operazioni} in una sola chiamata. L'interfaccia è deliberatamente più grossa di quella degli oggetti sottostanti.
+\end{itemize}
+
+Nel progetto Helios sono presenti \textbf{due istanze} del Remote Proxy.
+
+\subsection{Remote Proxy \#1: LlmService (Proxy del modello AI remoto)}
+
+Il componente \texttt{EnergyController} invoca \texttt{llmService.askAi(data)} come una semplice chiamata locale. \texttt{LlmService} è il proxy che nasconde completamente ciò che avviene "dall'altra parte della rete": la connessione HTTP all'API Groq, la serializzazione JSON del body, l'autenticazione Bearer Token, la selezione del modello con fallback automatico, e la deserializzazione della risposta.
+
+\begin{lstlisting}[language=Java, caption=LlmService come Remote Proxy del servizio AI]
+@Service
+public class LlmService {
+
+    private static final String GROQ_URL =
+        "https://api.groq.com/openai/v1/chat/completions";
+
+    // Fallback automatico: qualita' -> velocita'
+    private static final String[] MODELS = {
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
+    };
+
+    public String askAi(String promptData) {
+        // Il chiamante (EnergyController) non sa nulla di:
+        // - quale modello viene usato
+        // - come viene serializzata la richiesta HTTP
+        // - come viene gestito il fallback tra modelli
+        // - come viene autenticata la chiamata
+        for (String model : MODELS) {
+            // Costruisce e invia la richiesta HTTP all'API remota
+            // Gestisce automaticamente errori e retry
+        }
+    }
+}
+\end{lstlisting}
+
+Dal punto di vista del controller, la chiamata \texttt{llmService.askAi(data)} e' identica a una chiamata locale: nessun dettaglio di rete, nessun modello specifico, nessun header HTTP e' visibile.
+
+\subsection{Remote Proxy \#2: HeliosClient (Proxy del server backend)}
+
+Il client CLI espone all'operatore operazioni come \texttt{performLogin()}, \texttt{sendGetRequest()} e \texttt{setSessionFilter()} che appaiono come funzioni locali, ma internamente effettuano tutte richieste HTTP verso \texttt{http://localhost:8080/api}. L'utente interagisce con il client come se stesse usando direttamente il sistema; \texttt{HeliosClient} e' il proxy del server remoto.
+
+\begin{lstlisting}[language=Java, caption=HeliosClient come Remote Proxy del server Spring Boot]
+public class HeliosClient {
+
+    private static final String BASE_URL = "http://localhost:8080/api";
+    private static final HttpClient client = HttpClient.newHttpClient();
+
+    // Proxy del login remoto: il chiamante non gestisce HTTP
+    private static void performLogin(Scanner scanner) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(BASE_URL + "/auth/login"))
+                .header("Content-Type",
+                    "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(formData))
+                .build();
+
+        HttpResponse<String> response =
+            client.send(request, HttpResponse.BodyHandlers.ofString());
+        // Estrae il token JWT dalla risposta e lo salva localmente
+    }
+
+    // Proxy della chiamata GET remota: gestisce token e cookie
+    private static void sendGetRequest(String endpoint) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(BASE_URL + endpoint))
+                .header("Authorization", "Bearer " + jwtToken)
+                .GET();
+        // Aggiunge cookie di sessione se presente
+        // Gestisce codici di risposta HTTP
+    }
+}
+\end{lstlisting}
+
+\subsection{Confronto tra le due istanze}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{Aspetto} & \textbf{LlmService} & \textbf{HeliosClient} \\
+        \midrule
+        Oggetto remoto rappresentato & API Groq (LLM) & Server Spring Boot \\
+        Chiamante & EnergyController & Operatore (CLI) \\
+        Protocollo nascosto & HTTPS + Bearer Auth & HTTP + JWT + Cookie \\
+        Complessita' nascosta & Fallback multi-modello & Gestione token e sessione \\
+        \bottomrule
+    \end{tabular}
+    \caption{Confronto tra le due istanze del Remote Proxy nel sistema Helios.}
+\end{table}
+
 % -------------------------------------------------------------------
 % CAPITOLO 4 (AGGIORNATO)
 % -------------------------------------------------------------------
@@ -876,166 +976,7 @@ Il client è stato progettato per essere "smart":
 % -------------------------------------------------------------------
 \chapter{Testing, Debugging e Ottimizzazioni}
 
-Durante la fase di test e validazione del sistema, sono stati identificati e risolti diversi problemi critici relativi alla gestione dei dati, alla sicurezza e all'integrazione con sistemi LLM esterni.
-
-\section{Problema 1: Parsing JSON Non Robusto nel Frontend}
-
-\subsection{Sintomo}
-Quando il frontend JavaScript tentava di parsificare risposte non-JSON dal server (ad es. fallback con emoji o testo semplice), il parser sollevava eccezioni tipo:
-\begin{lstlisting}[language=bash, caption=Errore osservato nel browser]
-Errore richiesta: Unexpected token '⚠', "⚠️ MODALIT"... is not valid JSON
-Errore richiesta: Unexpected token 'A', "ANALISI VE"... is not valid JSON
-\end{lstlisting}
-
-\subsection{Causa Radice}
-Il servizio \texttt{LlmService} ritornava un fallback contenente emoji quando Ollama non era disponibile:
-\begin{lstlisting}[language=bash, caption=Fallback non-JSON]
-⚠️ MODALITÀ OFFLINE (Ollama non disponibile)
-Analisi sintetica dei dati forniti...
-\end{lstlisting}
-
-Il frontend, vedendo l'header \texttt{Content-Type: application/json}, tentava il parsing senza prima verificare se il contenuto era effettivamente JSON valido.
-
-\subsection{Soluzione Implementata}
-Aggiornamento di `\texttt{app.js}` (frontend) con try-catch robusto:
-\begin{lstlisting}[language=JavaScript, caption=Parsing JSON robusto]
-if (contentType.includes("application/json")) {
-    try {
-        return JSON.parse(text);
-    } catch {
-        return text;  // Ritorna il testo se non parsabile
-    }
-}
-
-try {
-    return JSON.parse(text);
-} catch {
-    return text;  // Fallback sempre disponibile
-}
-\end{lstlisting}
-
-\subsection{Test di Validazione}
-Il fix è stato testato con:
-\begin{itemize}
-    \item Risposte contenenti emoji (✅ Passato).
-    \item Risposte contenenti solo testo (✅ Passato).
-    \item Risposte JSON valide (✅ Passato).
-    \item Esecuzione dei test Maven: \textbf{BUILD SUCCESS}.
-\end{itemize}
-
-\section{Problema 2: Bug di Formattazione in Financial Report}
-
-\subsection{Sintomo}
-L'endpoint \texttt{/api/energy/financial-report} causava un'eccezione:
-\begin{lstlisting}[language=bash, caption=Errore runtime osservato]
-Exception: java.util.MissingFormatArgumentException: 
-Format specifier '%.2f' not present in arguments
-\end{lstlisting}
-
-\subsection{Causa Radice}
-Nel metodo \texttt{getFinancialReport()} di \texttt{EnergyController.java}, il formato string conteneva 4 placeholder (\texttt{\%.2f}) ma l'argomento finale era concatenato nella stringa stessa:
-\begin{lstlisting}[language=Java, caption=Codice errato]
-return String.format(
-    "REPORT ECONOMICO & ECOLOGICO:\n" +
-    "- Energia Totale Prodotta: %.2f kWh\n" +
-    "- Valore Economico Generato: %.2f € (a %.2f €/kWh)\n" +
-    "- CO2 Risparmiata: %.2f kg\n",
-    totalKwh, totalValue, energyPrice, co2Saved  // ← Manca il quarto argomento nella stringa
-);
-\end{lstlisting}
-
-\subsection{Soluzione}
-Correzione della sintassi di \texttt{String.format()}:
-\begin{lstlisting}[language=Java, caption=Codice corretto]
-return String.format(
-    "REPORT ECONOMICO & ECOLOGICO:\n" +
-    "- Energia Totale Prodotta: %.2f kWh\n" +
-    "- Valore Economico Generato: %.2f € (a %.2f €/kWh)\n" +
-    "- CO2 Risparmiata: %.2f kg\n",  // ← Virgola aggiunta
-    totalKwh, totalValue, energyPrice, co2Saved
-);
-\end{lstlisting}
-
-\subsection{Validazione}
-Il fix è stato verificato tramite:
-\begin{itemize}
-    \item Test endpoint diretto: \textbf{HTTP 200 OK}.
-    \item Esecuzione test suite Maven: \textbf{BUILD SUCCESS}.
-    \item Verifica risposta contiene valori numerici corretti.
-\end{itemize}
-
-\section{Problema 3: Integrazione Lenta con Ollama}
-
-\subsection{Sintomo}
-Le richieste all'endpoint \texttt{/api/energy/smart-analysis} richiedevano 30-60 secondi per completarsi (inferenza su CPU).
-
-\subsection{Causa Radice}
-\begin{itemize}
-    \item Modello \textbf{llama3.2} (2.0 GB) processato su CPU (senza GPU).
-    \item Timeout insufficiente (default di Spring RestTemplate: 30 secondi).
-    \item Il modello non era configurato in Ollama.
-\end{itemize}
-
-\subsection{Soluzione Multi-Livello}
-\subsubsection{1. Configurazione Timeout Adeguato}
-Aggiornamento di \texttt{LlmService.java}:
-\begin{lstlisting}[language=Java, caption=RestTemplate con timeout 5 minuti]
-RestTemplate restTemplate = new RestTemplateBuilder()
-    .setConnectTimeout(java.time.Duration.ofSeconds(10))
-    .setReadTimeout(java.time.Duration.ofMinutes(5))  // 5 minuti
-    .build();
-\end{lstlisting}
-
-\subsubsection{2. Fallback Multi-Model}
-Implementazione di fallback automatico tra modelli:
-\begin{lstlisting}[language=Java, caption=Modelli in ordine di velocità]
-// Models ranked by speed (fast) to quality (slow)
-// neural-chat:     ~30-60s, buona qualità
-// tinyllama:       ~5-10s,  veloce ma meno accurato
-// phi:             ~10-20s, buon compromesso
-// llama3.2:        ~1-2m,   massima qualità
-private static final String[] MODEL_NAMES = 
-    {"neural-chat", "tinyllama", "phi", "llama3.2"};
-
-for (String model : MODEL_NAMES) {
-    try {
-        // Tenta con il modello corrente
-        Map<String, Object> response = 
-            restTemplate.postForObject(OLLAMA_URL, entity, Map.class);
-        if (response != null && response.containsKey("response")) {
-            return response.get("response").toString();
-        }
-    } catch (Exception e) {
-        // Prova il modello successivo
-        System.err.println("LLM error with model " + model);
-    }
-}
-\end{lstlisting}
-
-\subsubsection{3. Indicatore di Caricamento nel Frontend}
-Aggiornamento di \texttt{app.js}:
-\begin{lstlisting}[language=JavaScript, caption=Messaggione di caricamento]
-if (action === "smart") {
-    renderOutput("⏳ Analisi IA in corso... " +
-                 "(può richiedere 30-60 secondi)");
-}
-await runAction(action);
-\end{lstlisting}
-
-\subsubsection{4. Download Modello}
-Scaricamento di \textbf{neural-chat} (4.1 GB) tramite:
-\begin{lstlisting}[language=bash, caption=Comando per scaricare il modello]
-docker exec -it helios-ollama /usr/bin/ollama pull neural-chat
-\end{lstlisting}
-
-\subsection{Risultati Ottenuti}
-Dopo l'ottimizzazione:
-\begin{itemize}
-    \item \textbf{Tempo di risposta:} Ridotto da timeout a 30-60 secondi per neural-chat.
-    \item \textbf{Robustezza:} Fallback automatico se un modello non è disponibile.
-    \item \textbf{UX:} Messaggi informativi durante l'attesa.
-    \item \textbf{Qualità:} Analisi semantiche complete e coerenti in italiano.
-\end{itemize}
+Di seguito la validazione end-to-end del sistema e lo stack tecnologico finale adottato.
 
 \section{Validazione End-to-End}
 
@@ -1262,7 +1203,7 @@ Dopo le ottimizzazioni, il sistema è strutturato come segue:
         \midrule
         Backend Server & Java 21 + Spring Boot 3.5.8 \\
         Database (Runtime) & PostgreSQL 16 (Docker) \\
-        Database (Test) & H2 (in-memory) \\
+        Database (Test) & H2 in-memory (solo test unitari) \\
         API Style & RESTful con JWT Authentication \\
         Frontend & JavaScript SPA (HTML/CSS/JS) \\
         LLM Integration & Ollama (neural-chat + fallback) \\

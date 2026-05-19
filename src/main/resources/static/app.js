@@ -1,11 +1,19 @@
 const state = {
   token: localStorage.getItem("heliosToken") || "",
+  pagedData: [],
+  currentPage: 0,
 };
+
+const PAGE_SIZE = 10;
 
 const authState = document.getElementById("authState");
 const tokenState = document.getElementById("tokenState");
 const output = document.getElementById("output");
 const summaryCards = document.getElementById("summaryCards");
+const chartContainer = document.getElementById("chartContainer");
+const chartCanvas = document.getElementById("chartCanvas");
+
+let activeChart = null;
 
 function setToken(token) {
   state.token = token || "";
@@ -31,11 +39,76 @@ function formatValue(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function hideChart() {
+  chartContainer.style.display = "none";
+  if (activeChart) {
+    activeChart.destroy();
+    activeChart = null;
+  }
+}
+
+function renderChart(data) {
+  const hasProduction = data.length > 0 && "totalProduction" in data[0];
+  if (!hasProduction) { hideChart(); return; }
+
+  chartContainer.style.display = "block";
+  if (activeChart) { activeChart.destroy(); }
+
+  const labels = data.map((r) => r.date || r.Date || Object.values(r)[0]);
+  const values = data.map((r) => r.totalProduction ?? r.TotalProduction ?? 0);
+
+  activeChart = new Chart(chartCanvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Produzione giornaliera (kWh)",
+        data: values,
+        borderColor: "#76f7c5",
+        backgroundColor: "rgba(118,247,197,0.08)",
+        borderWidth: 2,
+        pointRadius: data.length > 60 ? 0 : 3,
+        pointHoverRadius: 5,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#9fb0c8", font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.y.toFixed(2)} kWh`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: "#9fb0c8",
+            maxTicksLimit: 12,
+            maxRotation: 45,
+          },
+          grid: { color: "rgba(255,255,255,0.05)" },
+        },
+        y: {
+          ticks: { color: "#9fb0c8" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          title: { display: true, text: "kWh", color: "#9fb0c8" },
+        },
+      },
+    },
+  });
+}
+
 function renderOutput(content) {
   output.classList.remove("empty");
   if (typeof content === "string") {
     output.textContent = content;
     summaryCards.innerHTML = "";
+    hideChart();
     return;
   }
 
@@ -43,32 +116,20 @@ function renderOutput(content) {
     if (content.length === 0) {
       output.textContent = "Nessun dato disponibile.";
       summaryCards.innerHTML = "";
+      hideChart();
       return;
     }
 
-    output.innerHTML = `
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              ${Object.keys(content[0]).map((key) => `<th>${key}</th>`).join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${content.map((row) => `
-              <tr>
-                ${Object.values(row).map((value) => `<td>${formatValue(value)}</td>`).join("")}
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
+    state.pagedData = content;
+    state.currentPage = 0;
+    renderPage(0);
+    renderChart(content);
     summaryCards.innerHTML = "";
     return;
   }
 
   if (content && typeof content === "object") {
+    hideChart();
     summaryCards.innerHTML = Object.entries(content)
       .slice(0, 3)
       .map(([key, value]) => `
@@ -84,6 +145,41 @@ function renderOutput(content) {
   }
 
   output.textContent = String(content);
+}
+
+function renderPage(page) {
+  const data = state.pagedData;
+  const totalPages = Math.ceil(data.length / PAGE_SIZE);
+  const start = page * PAGE_SIZE;
+  const slice = data.slice(start, start + PAGE_SIZE);
+  const headers = Object.keys(data[0]);
+
+  output.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>${headers.map((k) => `<th>${k}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${slice.map((row) => `
+            <tr>${Object.values(row).map((v) => `<td>${formatValue(v)}</td>`).join("")}</tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="page-btn" onclick="goPage(${page - 1})" ${page === 0 ? "disabled" : ""}>&#8592; Prec</button>
+      <span class="page-info">Pagina ${page + 1} di ${totalPages} &nbsp;·&nbsp; ${data.length} record totali</span>
+      <button class="page-btn" onclick="goPage(${page + 1})" ${page >= totalPages - 1 ? "disabled" : ""}>Succ &#8594;</button>
+    </div>
+  `;
+}
+
+function goPage(page) {
+  const totalPages = Math.ceil(state.pagedData.length / PAGE_SIZE);
+  if (page < 0 || page >= totalPages) return;
+  state.currentPage = page;
+  renderPage(page);
 }
 
 async function apiFetch(endpoint, options = {}) {

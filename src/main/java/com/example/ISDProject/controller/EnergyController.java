@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -90,6 +91,7 @@ public class EnergyController {
     }
 
     @GetMapping("/batch-suggestions")
+    @Cacheable("batchInsights")
     public BatchInsightsDTO getBatchSuggestions() {
         List<RenewableData> allData = repository.findAll();
 
@@ -255,6 +257,7 @@ public class EnergyController {
     }
 
     @GetMapping("/peak-hours")
+    @Cacheable("peakHours")
     public String getPeakHoursAnalysis() {
         List<RenewableData> allData = repository.findAll();
 
