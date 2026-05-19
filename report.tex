@@ -146,7 +146,7 @@ Il sistema è basato su un'architettura distribuita a due livelli (Two-Tier), pr
     \node [component] (client) {\textbf{Client CLI}\\(Java)};
     \node [component, right=3cm of client] (server) {\textbf{Server Backend}\\(Spring Boot)};
     \node [database, below=1.5cm of server] (db) {PostgreSQL\\(Docker)};
-    \node [external, right=2.5cm of server] (llm) {Ollama\\(LLM)};
+    \node [external, right=2.5cm of server] (llm) {Groq API\\(Cloud LLM)};
 
     % Connessioni
     \draw [->, thick] ([yshift=2mm]client.east) -- node [above, font=\footnotesize] {HTTP REST} ([yshift=2mm]server.west);
@@ -165,9 +165,9 @@ Il sistema è basato su un'architettura distribuita a due livelli (Two-Tier), pr
 \subsection{Lato Server (Backend)}
 Il cuore del sistema è sviluppato in \textbf{Java} utilizzando il framework \textbf{Spring Boot}. Espone una serie di API RESTful che fungono da interfaccia per qualsiasi client autorizzato.
 \begin{itemize}
-    \item \textbf{Tecnologie:} Java 21, Spring Boot 3.5.8, Spring Security, JPA/Hibernate, Lombok.
+    \item \textbf{Tecnologie:} Java 21, Spring Boot 3.5.8, Spring Security, JPA/Hibernate, Springdoc OpenAPI, Spring Cache.
     \item \textbf{Database:} PostgreSQL 16 (containerizzato via Docker) per la persistenza dei dati energetici.
-    \item \textbf{Integrazione AI:} Modulo di comunicazione HTTP con \textbf{Ollama} (Llama 3.2 / Mistral) per l'elaborazione del linguaggio naturale.
+    \item \textbf{Integrazione AI:} Modulo di comunicazione HTTPS con \textbf{Groq API} (\texttt{llama-3.3-70b-versatile}) per l'analisi del linguaggio naturale. Fallback automatico su modelli alternativi in caso di rate limiting.
 \end{itemize}
 
 \subsubsection{Componenti Backend}
@@ -181,19 +181,17 @@ Gestisce l'autenticazione e l'emissione dei token JWT. È l'unico endpoint pubbl
 \end{itemize}
 
 \paragraph{EnergyController}
-Il componente centrale che exposifica tutti gli endpoint di business logic. Riceve richieste HTTP da client autenticati e orchestrata la business logic.
+Strato REST puro: espone gli endpoint HTTP e delega l'intera elaborazione a \texttt{EnergyService}. Non contiene logica di business.
 \begin{itemize}
-    \item \textbf{Responsabilità:} Coordinare le operazioni di filtraggio, aggregazione, calcolo e analisi dei dati energetici.
-    \item \textbf{Endpoints Principali:}
-    \begin{enumerate}
-        \item \texttt{/daily-report-session}: Aggrega dati per giorno e calcola metriche (produzione totale, temperatura media, status).
-        \item \texttt{/batch-suggestions}: Esegue molteplici analisi in parallelo (best/worst day, anomalie).
-        \item \texttt{/wind-impact}: Analizza l'impatto della velocità del vento sulla produzione.
-        \item \texttt{/forecast}: Stima la produzione futura basata su medie storiche.
-        \item \texttt{/financial-report}: Calcola ROI, valore economico e CO\textsubscript{2} risparmiata.
-        \item \texttt{/peak-hours}: Identifica l'ora di massima produzione.
-        \item \texttt{/smart-analysis}: Delegamittelfatta alla LlmService per analisi AI.
-    \end{enumerate}
+    \item \textbf{Responsabilità:} Ricevere richieste HTTP autenticate, estrarre i parametri e restituire la risposta di \texttt{EnergyService}.
+    \item \textbf{Endpoints:} \texttt{/daily-report-session}, \texttt{/batch-suggestions}, \texttt{/wind-impact}, \texttt{/forecast}, \texttt{/financial-report}, \texttt{/peak-hours}, \texttt{/smart-analysis}.
+\end{itemize}
+
+\paragraph{EnergyService}
+Contiene l'intera logica di business estratta dal controller nel refactoring architetturale. È il cuore computazionale del sistema.
+\begin{itemize}
+    \item \textbf{Responsabilità:} Aggregazione giornaliera dei dati, analisi batch (best/worst day, anomalie), calcoli economici, analisi ambientali, forecasting, analisi AI.
+    \item \textbf{Ottimizzazione:} I metodi \texttt{getBatchInsights()} e \texttt{getPeakHours()} sono annotati con \texttt{@Cacheable} (Spring Cache), poiché elaborano l'intero dataset senza parametri variabili e i risultati possono essere riusati senza ricalcolo.
 \end{itemize}
 
 \paragraph{RenewableRepository}
@@ -204,25 +202,25 @@ Interfaccia JPA che incapsula le operazioni di query al database PostgreSQL. Off
 \end{itemize}
 
 \paragraph{LlmService}
-Servizio dedicato all'integrazione con il modello di linguaggio Ollama. Costruisce un prompt strutturato e invia una richiesta HTTP al server Ollama locale.
+Servizio dedicato all'integrazione con \textbf{Groq API}, un servizio cloud LLM ad alte prestazioni (LPU hardware). Costruisce un prompt strutturato nel formato OpenAI-compatible e gestisce autenticazione, serializzazione e fallback tra modelli.
 \begin{itemize}
     \item \textbf{Metodo Principale:} \texttt{askAi(String promptData)}
     \item \textbf{Responsabilità:}
     \begin{enumerate}
-        \item Arricchisce il prompt grezzo con un contesto professionale ("Sei un ingegnere energetico esperto...").
-        \item Crea una richiesta HTTP POST verso \texttt{http://localhost:11434/api/generate}.
-        \item Serializza i dati in JSON includendo il modello, il prompt, e flag di configurazione.
-        \item Attende la risposta dal modello LLM e la restituisce al caller.
+        \item Arricchisce i dati grezzi con un contesto professionale come sistema-prompt.
+        \item Crea una richiesta HTTPS POST verso \texttt{https://api.groq.com/openai/v1/chat/completions}.
+        \item Autentica la richiesta tramite API Key letta dalla variabile d'ambiente \texttt{GROQ\_API\_KEY}.
+        \item In caso di rate limit (HTTP 429), tenta automaticamente il modello successivo nell'array di fallback.
     \end{enumerate}
-    \item \textbf{Gestione Errori:} Se Ollama non è attivo, ritorna un messaggio di errore user-friendly.
+    \item \textbf{Modelli (in ordine di preferenza):} \texttt{llama-3.3-70b-versatile}, \texttt{llama-3.1-8b-instant}, \texttt{mixtral-8x7b-32768}.
 \end{itemize}
 
 \paragraph{UserSession}
-Mantiene il contesto di sessione dell'utente corrente, incluso il filtro temporale impostato.
+Mantiene il contesto di sessione dell'utente corrente, incluso il filtro temporale impostato. Si trova nel package \texttt{session} (separato dal package \texttt{service}) per chiarezza architetturale.
 \begin{itemize}
     \item \textbf{Stato Mantenuto:} Date di inizio/fine per il filtro, booleano per indicare se il filtro è attivo.
     \item \textbf{Scopo:} Evitare che il client debba ripetere i parametri di filtro a ogni richiesta.
-    \item \textbf{Nota:} È uno \textbf{Scoped Bean} di Spring, quindi ogni sessione HTTP ottiene un'istanza separata.
+    \item \textbf{Nota:} È un \textbf{bean \texttt{@SessionScope}} di Spring: ogni sessione HTTP ottiene un'istanza separata; utenti diversi non si interferiscono.
 \end{itemize}
 
 \paragraph{SecurityConfig e JwtFilter}
@@ -231,6 +229,29 @@ Configurano e applicano il meccanismo di sicurezza JWT.
     \item \textbf{SecurityConfig:} Definisce quale URL è pubblico (\texttt{/api/auth/**}) e quale protected (\texttt{/api/energy/**}).
     \item \textbf{JwtFilter:} Intercetta ogni richiesta, estrae il token dall'header, lo valida, e popola il SecurityContext se valido.
 \end{itemize}
+
+\subsubsection{Struttura dei Package}
+Il progetto segue una struttura a package orientata al dominio (package-by-feature):
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Package} & \textbf{Contenuto} \\
+        \midrule
+        \texttt{controller/} & \texttt{EnergyController}, \texttt{AuthController} — strato REST \\
+        \texttt{service/} & \texttt{EnergyService}, \texttt{LlmService} — logica di business \\
+        \texttt{session/} & \texttt{UserSession} — stato di sessione HTTP \\
+        \texttt{security/} & \texttt{JwtFilter}, \texttt{JwtUtil}, \texttt{SecurityConfig} \\
+        \texttt{config/} & \texttt{DataLoader} — import CSV all'avvio \\
+        \texttt{dto/} & \texttt{DailyReportDTO}, \texttt{BatchInsightsDTO} \\
+        \texttt{model/} & \texttt{RenewableData} — entità JPA \\
+        \texttt{repository/} & \texttt{RenewableRepository} — accesso al DB \\
+        \texttt{client/} & \texttt{HeliosClient} — CLI Java \\
+        \bottomrule
+    \end{tabular}
+    \caption{Struttura dei package del progetto Helios.}
+\end{table}
 
 \subsection{Lato Client (Frontend CLI)}
 L'interfaccia utente è una \textbf{Command Line Interface (CLI)} avanzata sviluppata in Java puro. Utilizza le librerie standard \texttt{java.net.http} per comunicare con il backend.
@@ -273,44 +294,42 @@ Per ridurre la latenza di rete e il numero di chiamate ("chattiness"), il server
 \subsection{Implementazione Tecnica}
 Il client invoca un singolo endpoint e riceve un'intera lista di report giornalieri aggregati:
 
-\begin{lstlisting}[language=Java, caption=Aggregazione dati lato backend - Remote Facade]
+\begin{lstlisting}[language=Java, caption=Remote Facade: EnergyController delega a EnergyService]
+// EnergyController - strato presentazione (thin layer)
 @GetMapping("/daily-report-session")
 public List<DailyReportDTO> getDailyReportsWithSession() {
+    return energyService.getDailyReports();
+}
+
+// EnergyService - logica di business (facade reale)
+public List<DailyReportDTO> getDailyReports() {
     List<RenewableData> allData = repository.findAll();
-    
-    // Filtro per range temporale (se attivo)
+
+    // Filtro per range temporale (se attivo in sessione)
     if (userSession.isFilterActive()) {
         allData = allData.stream()
-            .filter(d -> d.getDateTime().toLocalDate()
-                    .isAfter(userSession.getStart())
-                && d.getDateTime().toLocalDate()
-                    .isBefore(userSession.getEnd()))
+            .filter(d -> !d.getDateTime().toLocalDate()
+                    .isBefore(userSession.getStart())
+                && !d.getDateTime().toLocalDate()
+                    .isAfter(userSession.getEnd()))
             .collect(Collectors.toList());
     }
-    
-    // Aggregazione per giorno
-    Map<LocalDate, List<RenewableData>> groupedByDay = 
-        allData.stream()
-            .collect(Collectors.groupingBy(
-                d -> d.getDateTime().toLocalDate()
-            ));
-    
-    // Trasformazione in DTO
-    return groupedByDay.entrySet().stream()
+
+    // Aggregazione per giorno e trasformazione in DTO
+    return allData.stream()
+        .collect(Collectors.groupingBy(
+            d -> d.getDateTime().toLocalDate()))
+        .entrySet().stream()
         .map(entry -> {
-            LocalDate date = entry.getKey();
-            List<RenewableData> dailyData = entry.getValue();
-            
-            double totalProd = dailyData.stream()
-                .mapToDouble(RenewableData::getSystemProduction)
-                .sum();
-            double avgTemp = dailyData.stream()
+            double totalProd = entry.getValue().stream()
+                .mapToDouble(RenewableData::getSystemProduction).sum();
+            double avgTemp = entry.getValue().stream()
                 .mapToDouble(RenewableData::getAirTemperature)
                 .average().orElse(0.0);
-            
-            String status = determineStatus(totalProd);
-            
-            return new DailyReportDTO(date, totalProd, avgTemp, status);
+            String status = totalProd > 2000 ? "HIGH_PERFORMANCE"
+                : totalProd < 500 ? "LOW_GENERATION" : "NORMAL";
+            return new DailyReportDTO(
+                entry.getKey().toString(), totalProd, avgTemp, status);
         })
         .sorted(Comparator.comparing(DailyReportDTO::getDate))
         .collect(Collectors.toList());
@@ -497,189 +516,119 @@ Questo riduce drasticamente il numero di round-trip HTTP e la latenza globale pe
 \section{Adapter Pattern - LLM Integration}
 
 \subsection{Problema e Contesto}
-L'integrazione con un sistema di generazione di linguaggio naturale (LLM) richiede adattare il formato dei dati energetici a quello atteso dal modello AI. Inoltre, il protocollo di comunicazione con Ollama (HTTP REST) deve essere incapsulato in modo trasparente dal resto dell'applicazione.
+L'integrazione con un'API di generazione del linguaggio naturale richiede adattare il formato dei dati energetici a quello atteso dall'API remota, incapsulando il protocollo HTTPS, l'autenticazione Bearer e il formato OpenAI-compatible in modo trasparente al resto dell'applicazione.
 
 \subsection{Soluzione: LlmService come Adapter}
-Il servizio \texttt{LlmService} funge da adapter tra il dominio energetico (EnergyController) e il dominio AI (Ollama).
+Il servizio \texttt{LlmService} funge da adapter tra il dominio energetico (\texttt{EnergyService}) e il dominio AI (\textbf{Groq API}). Il chiamante non sa nulla del provider, del modello specifico utilizzato, né del protocollo di rete.
 
-\begin{lstlisting}[language=Java, caption=LlmService - Orchestrazione richiesta LLM]
+\begin{lstlisting}[language=Java, caption=LlmService - Adapter verso Groq API con fallback automatico]
 @Service
 public class LlmService {
-    
-    private static final String OLLAMA_URL = 
-        "http://localhost:11434/api/generate";
-    private static final String MODEL_NAME = "llama3.2";
-    
+
+    private static final String GROQ_URL =
+        "https://api.groq.com/openai/v1/chat/completions";
+
+    // Fallback automatico: qualita' -> velocita'
+    private static final String[] MODELS = {
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
+    };
+
+    @Value("${groq.api.key:}")
+    private String apiKey;
+
     public String askAi(String promptData) {
-        try {
-            // 1. Costruisci il prompt completo
-            String fullPrompt = 
-                "Sei un ingegnere energetico esperto. "
-                + "Analizza questi dati brevemente "
-                + "e dai un consiglio tecnico in italiano:\n" 
-                + promptData;
-            
-            // 2. Crea il body della richiesta
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", MODEL_NAME);
-            requestBody.put("prompt", fullPrompt);
-            requestBody.put("stream", false);
-            
-            // 3. Configura gli header HTTP
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Map<String, Object>> entity = 
-                new HttpEntity<>(requestBody, headers);
-            
-            // 4. Invia la richiesta a Ollama
-            RestTemplate restTemplate = new RestTemplate();
-            Map<String, Object> response = 
-                restTemplate.postForObject(
-                    OLLAMA_URL, 
-                    entity, 
-                    Map.class
+        for (String model : MODELS) {
+            try {
+                // Costruisce la richiesta nel formato OpenAI-compatible
+                Map<String, Object> userMsg = Map.of(
+                    "role", "user",
+                    "content", "Sei un ingegnere energetico esperto. "
+                        + "Analizza i dati e dai consigli tecnici:\n"
+                        + promptData
                 );
-            
-            // 5. Estrai e ritorna la risposta
-            if (response != null && response.containsKey("response")) {
-                return response.get("response").toString();
+                Map<String, Object> body = Map.of(
+                    "model", model,
+                    "messages", List.of(userMsg),
+                    "temperature", 0.7,
+                    "max_tokens", 500
+                );
+                // Invia la richiesta HTTPS con Bearer token
+                HttpHeaders headers = new HttpHeaders();
+                headers.setBearerAuth(apiKey);
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                ResponseEntity<Map> response = restTemplate.exchange(
+                    GROQ_URL, HttpMethod.POST,
+                    new HttpEntity<>(body, headers), Map.class
+                );
+                return extractContent(response.getBody());
+
+            } catch (HttpClientErrorException e) {
+                // 429 = rate limit: prova il modello successivo
+                if (e.getStatusCode().value() == 429) continue;
+                return "Errore API: " + e.getMessage();
             }
-            return "Errore: risposta vuota dalla LLM.";
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Errore: Ollama non raggiungibile. "
-                + "Esegui 'ollama serve'.";
         }
+        return "Tutti i modelli Groq hanno restituito un errore.";
     }
 }
 \end{lstlisting}
 
 \subsection{Flusso di Richiesta All'LLM}
 
-Quando il client richiede l'analisi AI tramite l'opzione 9:
+Quando il client richiede l'analisi AI tramite \texttt{/smart-analysis}:
 
 \begin{enumerate}
-    \item \textbf{Client Istanza:} Utente seleziona opzione 9 e specifica un range data (es. 2017-06-01 a 2017-06-30).
-    
     \item \textbf{Request HTTP:}
     \begin{lstlisting}[language=bash]
 GET /api/energy/smart-analysis?start=2017-06-01&end=2017-06-30
 Authorization: Bearer <jwt_token>
     \end{lstlisting}
-    
-    \item \textbf{Elaborazione Backend:}
-    \begin{lstlisting}[language=Java]
-@GetMapping("/smart-analysis")
-public String getSmartAnalysis(
-        @RequestParam(required = false) String start, 
-        @RequestParam(required = false) String end) {
-    
-    // Estrai dati dal range (max 15 record)
-    List<RenewableData> dataToAnalyze;
-    if (start != null && end != null) {
-        LocalDateTime startDate = 
-            LocalDate.parse(start).atStartOfDay();
-        LocalDateTime endDate = 
-            LocalDate.parse(end).atTime(23, 59, 59);
-        dataToAnalyze = repository.findByDateTimeBetween(
-            startDate, 
-            endDate
-        );
-    } else {
-        dataToAnalyze = repository.findAll().stream()
-            .sorted((a, b) -> b.getDateTime()
-                    .compareTo(a.getDateTime()))
-            .limit(3)  // Default: ultimi 3 record
-            .collect(Collectors.toList());
-    }
-    
-    // Limita a 15 record per non sovracaricare LLM
-    if (dataToAnalyze.size() > 15) {
-        dataToAnalyze = dataToAnalyze.stream()
-            .limit(15)
-            .collect(Collectors.toList());
-    }
-    
-    // Costruisci il context dati
-    StringBuilder dataContext = new StringBuilder();
-    for (RenewableData d : dataToAnalyze) {
-        dataContext.append(String.format(
-            "- Data: %s, Prod: %.2f, Radiazione: %.1f, "
-            + "Temp: %.1f, Vento: %.1f, Umidità: %d%%\n",
-            d.getDateTime(),
-            d.getSystemProduction(),
-            d.getRadiation(),
-            d.getAirTemperature(),
-            d.getWindSpeed(),
-            d.getRelativeAirHumidity()
-        ));
-    }
-    
-    // Delegama a LlmService
-    return llmService.askAi(dataContext.toString());
-}
-    \end{lstlisting}
-    
-    \item \textbf{Prompt Inviato a Ollama:} Un esempio di prompt generato:
-    \begin{lstlisting}[language=bash, caption=Prompt AI generato]
-Sei un ingegnere energetico esperto. Analizza questi dati 
-brevemente e dai un consiglio tecnico in italiano:
-- Data: 2017-06-15, Prod: 2345.67, Radiazione: 850.0, 
-  Temp: 28.5, Vento: 3.2, Umidità: 45%
-- Data: 2017-06-16, Prod: 2198.34, Radiazione: 820.0, 
-  Temp: 27.8, Vento: 4.1, Umidità: 52%
-- Data: 2017-06-17, Prod: 2567.89, Radiazione: 880.0, 
-  Temp: 29.1, Vento: 2.9, Umidità: 40%
-    \end{lstlisting}
-    
-    \item \textbf{Richiesta HTTP a Ollama:} Il LlmService serializza il prompt in JSON:
-    \begin{lstlisting}[language=json, caption=Body POST a http://localhost:11434/api/generate]
-{
-    "model": "llama3.2",
-    "prompt": "Sei un ingegnere energetico esperto...",
-    "stream": false
-}
-    \end{lstlisting}
-    
-    \item \textbf{Risposta Ollama:} Dopo alcuni secondi, Ollama ritorna:
-    \begin{lstlisting}[language=json, caption=Risposta da Ollama]
-{
-    "response": "Analizzando i dati forniti, osservo una produzione 
-        stabile con un picco il 17 giugno. Le condizioni meteo sono 
-        favorevoli: radiazione elevata e temperature moderate. 
-        La velocità del vento di 4.1 m/s nel 16 giugno ha contribuito 
-        al leggero calo di produzione rispetto al 15. Consiglio: 
-        effettuare pulizia dei moduli per optimizzare l'irraggiamento 
-        in scenari con foschia.",
-    "created_at": "2026-03-05T10:30:00Z",
-    "done": true
-}
-    \end{lstlisting}
-    
-    \item \textbf{Risposta al Client:} Il backend estrae il campo \texttt{response} e lo ritorna al client:
-    \begin{lstlisting}[language=bash, caption=Risposta finale al client CLI]
-ANALISI INTELLIGENTE (Ollama - Llama3.2):
 
-Analizzando i dati forniti, osservo una produzione stabile 
-con un picco il 17 giugno. Le condizioni meteo sono favorevoli:
-radiazione elevata e temperature moderate. La velocità del vento 
-di 4.1 m/s nel 16 giugno ha contribuito al leggero calo di produzione 
-rispetto al 15. Consiglio: effettuare pulizia dei moduli per optimizzare 
-l'irraggiamento in scenari con foschia.
+    \item \textbf{Elaborazione Backend (EnergyService):} Il servizio recupera max 15 record dal repository per il periodo richiesto, li formatta in testo strutturato e li passa a \texttt{LlmService.askAi()}.
+
+    \item \textbf{Body POST inviato a Groq (formato OpenAI-compatible):}
+    \begin{lstlisting}[language=json, caption=Body POST a Groq API]
+{
+    "model": "llama-3.3-70b-versatile",
+    "messages": [{
+        "role": "user",
+        "content": "Sei un ingegnere energetico esperto...\n
+            - Data: 2017-06-15, Prod: 2345.67, Rad: 850.0, ..."
+    }],
+    "temperature": 0.7,
+    "max_tokens": 500
+}
     \end{lstlisting}
+
+    \item \textbf{Risposta Groq (formato OpenAI-compatible):}
+    \begin{lstlisting}[language=json, caption=Risposta da Groq API]
+{
+    "choices": [{
+        "message": {
+            "content": "Analizzando i dati, osservo una produzione
+                stabile con un picco il 17 giugno. La radiazione
+                elevata e le temperature moderate sono favorevoli.
+                Consiglio: effettuare pulizia dei moduli."
+        }
+    }]
+}
+    \end{lstlisting}
+
+    \item \textbf{Risposta al Client:} Il backend estrae \texttt{choices[0].message.content} e lo restituisce come plain text al browser in 1-2 secondi (Groq LPU hardware).
 \end{enumerate}
 
-\subsection{Configurazione Ollama}
-Per poter utilizzare questa funzionalità, è necessario:
-\begin{enumerate}
-    \item Installare Ollama da \texttt{https://ollama.ai}
-    \item Avviare il server: \texttt{ollama serve}
-    \item Scarica il modello: \texttt{ollama pull llama3.2}
-    \item Verificare che sia raggiungibile su \texttt{http://localhost:11434}
-\end{enumerate}
+\subsection{Configurazione dell'API Key}
+La chiave API Groq non viene mai hardcodata nel codice sorgente. Viene letta esclusivamente dalla variabile d'ambiente \texttt{GROQ\_API\_KEY}:
+\begin{lstlisting}[language=bash, caption=Configurazione sicura tramite variabile d'ambiente]
+# application.properties (default vuoto: se assente, LLM disabilitata)
+groq.api.key=${GROQ_API_KEY:}
 
-Modelli alternativi compatibili: \texttt{mistral}, \texttt{neural-chat}, \texttt{codellama}.
+# Avvio con chiave
+GROQ_API_KEY=gsk_... mvn spring-boot:run
+\end{lstlisting}
+Modelli disponibili con fallback automatico in caso di rate limit (HTTP 429): \texttt{llama-3.3-70b-versatile} (primario, 70B parametri), \texttt{llama-3.1-8b-instant} (veloce), \texttt{mixtral-8x7b-32768} (alternativo).
 
 \section{Remote Proxy}
 
@@ -781,6 +730,37 @@ public class HeliosClient {
     \caption{Confronto tra le due istanze del Remote Proxy nel sistema Helios.}
 \end{table}
 
+\section{Spring Cache - Ottimizzazione delle Analisi Costose}
+
+Alcuni endpoint elaborano l'intero dataset (oltre 225.000 record) senza parametri variabili. Eseguire queste analisi ad ogni richiesta è inutilmente costoso. Spring Cache permette di memorizzare il risultato alla prima invocazione e restituirlo direttamente nelle chiamate successive.
+
+\subsection{Implementazione}
+L'annotazione \texttt{@Cacheable} è applicata a livello di \texttt{EnergyService}, garantendo che la cache sia trasparente sia al controller che ai test:
+
+\begin{lstlisting}[language=Java, caption=Spring Cache su EnergyService]
+@Service
+public class EnergyService {
+
+    @Cacheable("batchInsights")
+    public BatchInsightsDTO getBatchInsights() {
+        // Analisi costosa sull'intero dataset:
+        // best day, worst day, anomalie, totale produzione
+        // Eseguita una sola volta; poi servita dalla cache
+        List<RenewableData> allData = repository.findAll();
+        ...
+    }
+
+    @Cacheable("peakHours")
+    public String getPeakHours() {
+        // Aggregazione oraria sull'intero storico
+        // Il risultato non cambia finche' il dataset non varia
+        ...
+    }
+}
+\end{lstlisting}
+
+La cache è abilitata a livello applicativo tramite \texttt{@EnableCaching} sulla classe principale \texttt{IsdProjectHeliosApplication}. Gli endpoint \texttt{/batch-suggestions} e \texttt{/peak-hours} beneficiano di questa ottimizzazione; gli endpoint parametrizzati (es. \texttt{/wind-impact?start=...}) non vengono cachati perché il risultato varia in base ai parametri.
+
 % -------------------------------------------------------------------
 % CAPITOLO 4 (AGGIORNATO)
 % -------------------------------------------------------------------
@@ -804,7 +784,7 @@ Il sistema analizza come le variabili meteo influenzano la produzione.
 \end{itemize}
 
 \section{Intelligenza Artificiale Generativa}
-Tramite l'opzione 9 del Client, il sistema invia un sottoinsieme di dati critici a una LLM locale.
+Tramite l'endpoint \texttt{/smart-analysis}, il sistema invia un sottoinsieme di dati critici (max 15 record) all'API LLM cloud \textbf{Groq}.
 \begin{itemize}
     \item \textbf{Input:} Dati grezzi (es. "Prod: 0, Radiazione: 600").
     \item \textbf{Output:} Report discorsivo (es. "Attenzione: rilevata anomalia critica. Irraggiamento presente ma produzione assente. Probabile guasto inverter.").
@@ -959,7 +939,7 @@ MENU PRINCIPALE:
 2. Analisi Batch
 ...
 7. Report Economico
-9. CHIEDI ALL'IA (Ollama)
+9. CHIEDI ALL'IA (Groq AI)
 q. Esci
 \end{lstlisting}
 
@@ -1187,7 +1167,7 @@ Tutti gli endpoint sono stati testati e validati:
             Nota: Prima richiesta richiede 30-60 secondi (Ollama + neural-chat su CPU)
         \end{minipage}
     }
-    \caption{Analisi intelligente tramite LLM locale (Ollama + neural-chat). Integrazione dell'Adapter Pattern per IA generativa.}
+    \caption{Analisi intelligente tramite API LLM cloud (Groq + llama-3.3-70b-versatile). Integrazione dell'Adapter Pattern per IA generativa; risposta in 1-2 secondi.}
     \label{fig:screenshot_ai}
 \end{figure}
 
@@ -1205,8 +1185,10 @@ Dopo le ottimizzazioni, il sistema è strutturato come segue:
         Database (Runtime) & PostgreSQL 16 (Docker) \\
         Database (Test) & H2 in-memory (solo test unitari) \\
         API Style & RESTful con JWT Authentication \\
-        Frontend & JavaScript SPA (HTML/CSS/JS) \\
-        LLM Integration & Ollama (neural-chat + fallback) \\
+        API Documentation & Springdoc OpenAPI / Swagger UI \\
+        Frontend & JavaScript SPA + Chart.js 4.4.4 \\
+        LLM Integration & Groq API (llama-3.3-70b + fallback) \\
+        Caching & Spring Cache (\texttt{@Cacheable}) \\
         Container Orchestration & Docker Compose \\
         CI/CD Validazione & Maven Test Suite \\
         \bottomrule
@@ -1222,9 +1204,9 @@ Dopo le ottimizzazioni, il sistema è strutturato come segue:
 
 Il progetto Helios ha dimostrato con successo come un'architettura a microservizi (o client-server disaccoppiata) possa risolvere problemi reali nel dominio dell'energia.
 
-L'integrazione di pattern consolidati come Facade e DTO ha garantito performance e manutenibilità, mentre l'adozione di tecnologie emergenti come le LLM locali ha aggiunto un livello di accessibilità e intelligenza ai dati non comune nei sistemi SCADA tradizionali.
+L'integrazione di pattern consolidati come Remote Facade, Remote Proxy, DTO e Session State ha garantito performance e manutenibilità. Il refactoring architetturale (estrazione di \texttt{EnergyService}, separazione dei package per dominio) ha nettamente migliorato la leggibilità e testabilità del codice. L'adozione di tecnologie emergenti come le LLM cloud (\textbf{Groq API}) ha aggiunto un livello di intelligenza ai dati non comune nei sistemi SCADA tradizionali, con tempi di risposta di 1-2 secondi grazie all'hardware LPU.
 
-I risultati ottenuti sul dataset di test confermano la validità economica e tecnica della soluzione per contesti industriali. La fase di testing ha inoltre rivelato l'importanza della robustezza (error handling, timeout management) e dell'ottimizzazione (multi-model fallback, frontend caching) nella costruzione di sistemi distribuiti affidabili.
+I risultati ottenuti sul dataset di test confermano la validità economica e tecnica della soluzione per contesti industriali. La fase di sviluppo ha evidenziato l'importanza della sicurezza (gestione delle API key tramite variabili d'ambiente, JWT stateless), della robustezza (fallback multi-modello, error handling) e dell'ottimizzazione (Spring Cache per analisi costose, paginazione client-side con Chart.js) nella costruzione di sistemi distribuiti affidabili.
 
 \end{document}
 
