@@ -1,4 +1,4 @@
-package com.example.ISDProject.service;
+package com.example.ISDProject.session;
 
 import java.time.LocalDate;
 
@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.annotation.SessionScope;
 
 @Component
-@SessionScope 
+@SessionScope
 public class UserSession {
     private LocalDate startDateFilter;
     private LocalDate endDateFilter;
@@ -19,7 +19,7 @@ public class UserSession {
         this.startDateFilter = start;
         this.endDateFilter = end;
     }
-    
+
     public LocalDate getStart() { return startDateFilter; }
     public LocalDate getEnd() { return endDateFilter; }
 }

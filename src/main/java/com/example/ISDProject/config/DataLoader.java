@@ -1,4 +1,4 @@
-package com.example.ISDProject.util;
+package com.example.ISDProject.config;
 
 import java.io.FileReader;
 import java.time.LocalDateTime;
@@ -22,21 +22,21 @@ public class DataLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        if (repository.count() > 0) return; 
+        if (repository.count() > 0) return;
 
         System.out.println("--- INIZIO IMPORTAZIONE CSV ---");
-        
-        String csvFile = "data.csv"; 
+
+        String csvFile = "data.csv";
 
         try (CSVReader reader = new CSVReader(new FileReader(csvFile))) {
             String[] line;
-            reader.readNext(); 
+            reader.readNext();
 
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy-HH:mm");
 
             while ((line = reader.readNext()) != null) {
                 RenewableData data = new RenewableData();
-                
+
                 data.setDateTime(LocalDateTime.parse(line[0], formatter));
                 data.setWindSpeed(parseD(line[1]));
                 data.setSunshine(parseI(line[2]));
