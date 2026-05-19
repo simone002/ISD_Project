@@ -249,7 +249,7 @@ public class EnergyController {
             "REPORT ECONOMICO & ECOLOGICO:\n" +
             "- Energia Totale Prodotta: %.2f kWh\n" +
             "- Valore Economico Generato: %.2f € (a %.2f €/kWh)\n" +
-            "- CO2 Risparmiata: %.2f kg\n" +
+            "- CO2 Risparmiata: %.2f kg\n",
             totalKwh, totalValue, energyPrice, co2Saved
         );
     }

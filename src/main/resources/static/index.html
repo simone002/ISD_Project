@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helios Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <main class="shell">
+    <section class="hero panel">
+      <div>
+        <p class="eyebrow">ISDProjectHelios</p>
+        <h1>Energia rinnovabile, controllata in tempo reale.</h1>
+        <p class="lead">Login JWT, filtri temporali, report energetici e analisi AI in un'unica dashboard locale.</p>
+      </div>
+      <div class="hero-stat">
+        <span class="stat-label">Stato</span>
+        <strong id="authState">Non autenticato</strong>
+        <small>Backend Spring Boot su PostgreSQL</small>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel auth-panel">
+        <div class="panel-title">
+          <h2>Accesso</h2>
+          <span class="chip">admin / password</span>
+        </div>
+        <div class="form-row">
+          <label>Username</label>
+          <input id="username" type="text" value="admin">
+        </div>
+        <div class="form-row">
+          <label>Password</label>
+          <input id="password" type="password" value="password">
+        </div>
+        <button id="loginBtn" class="primary-btn">Login</button>
+        <p class="hint">Il token viene salvato solo nel browser e usato per le API protette.</p>
+      </article>
+
+      <article class="panel control-panel">
+        <div class="panel-title">
+          <h2>Filtro Sessione</h2>
+          <span class="chip">/api/energy/session/filter</span>
+        </div>
+        <div class="dual-inputs">
+          <div class="form-row">
+            <label>Data inizio</label>
+            <input id="startDate" type="date">
+          </div>
+          <div class="form-row">
+            <label>Data fine</label>
+            <input id="endDate" type="date">
+          </div>
+        </div>
+        <button id="filterBtn" class="secondary-btn">Attiva filtro</button>
+        <button id="refreshBtn" class="ghost-btn">Aggiorna report</button>
+      </article>
+
+      <article class="panel insights-panel">
+        <div class="panel-title">
+          <h2>Azioni rapide</h2>
+          <span class="chip">API energia</span>
+        </div>
+        <div class="actions-grid">
+          <button data-action="daily">Report giornaliero</button>
+          <button data-action="batch">Batch insights</button>
+          <button data-action="wind">Analisi vento</button>
+          <button data-action="forecast">Previsione</button>
+          <button data-action="financial">Report economico</button>
+          <button data-action="peak">Ore di picco</button>
+          <button data-action="smart">AI analysis</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel output-panel">
+      <div class="panel-title">
+        <h2>Risultato</h2>
+        <span id="tokenState" class="chip muted">token assente</span>
+      </div>
+      <div id="summaryCards" class="summary-cards"></div>
+      <div id="output" class="output empty">Effettua il login e avvia una richiesta.</div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

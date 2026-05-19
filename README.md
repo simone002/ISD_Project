@@ -20,7 +20,7 @@ Il progetto è un sistema di gestione dati energetici che consente di:
 - **Java**: 21
 - **Spring Boot**: 3.5.8
 - **Build Tool**: Maven
-- **Database**: H2 (in-memory)
+- **Database**: PostgreSQL via Docker
 - **ORM**: JPA/Hibernate
 - **Sicurezza**: Spring Security + JWT (JJWT 0.11.5)
 - **Parsing CSV**: OpenCSV 5.9
@@ -71,7 +71,8 @@ ISDProject/
 │   │   │   │   └── DataLoader       # Caricamento dati
 │   │   │   └── IsdProjectHeliosApplication.java  # Main application
 │   │   └── resources/
-│   │       └── application.properties # Configurazione
+│   │       ├── application.properties # Configurazione backend
+│   │       └── static/                # Frontend SPA servita da Spring Boot
 │   └── test/                         # Test unitari
 ├── pom.xml                           # Configurazione Maven
 ├── data.csv                          # File dati di esempio
@@ -84,7 +85,8 @@ ISDProject/
 
 ### Prerequisiti
 - Java 21 JDK installato
-- Maven 3.6+ installato
+- Maven wrapper incluso nel progetto
+- Docker e Docker Compose per Postgres
 
 ### Installazione
 
@@ -94,17 +96,17 @@ ISDProject/
    cd ISDProject
    ```
 
-2. **Compilare il progetto**:
-   ```bash
-   mvn clean install
-   ```
+2. **Avviare il database e il backend con Docker**:
+  ```bash
+  docker compose up --build
+  ```
 
-3. **Avviare l'applicazione**:
-   ```bash
-   mvn spring-boot:run
-   ```
+3. **Aprire il frontend**:
+  ```
+  http://localhost:8080/
+  ```
 
-L'applicazione sarà disponibile su `http://localhost:8080`
+L'applicazione sarà disponibile su `http://localhost:8080`.
 
 ---
 
@@ -158,19 +160,33 @@ L'applicazione sarà disponibile su `http://localhost:8080`
 
 ## 💾 Database
 
-L'applicazione utilizza **H2 Database** (in-memory) per lo sviluppo e il testing.
+L'applicazione utilizza **PostgreSQL** come database principale.
 
-### Configurazione
+### Docker
+
+Il file [docker-compose.yml](docker-compose.yml) avvia:
+- un container `postgres` con utente default `admin`
+- un container `app` con il backend Spring Boot
+
+### Parametri di default
+
 ```properties
-spring.datasource.url=jdbc:h2:mem:heliosdb
-spring.datasource.driverClassName=org.h2.Driver
-spring.h2.console.enabled=true
+spring.datasource.url=jdbc:postgresql://localhost:5432/heliosdb
+spring.datasource.username=admin
+spring.datasource.password=admin
 ```
 
-### Console H2
-Accedere a: `http://localhost:8080/h2-console`
-
 ---
+
+## 🖥️ Frontend
+
+Il frontend è una dashboard statica servita direttamente da Spring Boot in:
+
+- [src/main/resources/static/index.html](src/main/resources/static/index.html)
+- [src/main/resources/static/styles.css](src/main/resources/static/styles.css)
+- [src/main/resources/static/app.js](src/main/resources/static/app.js)
+
+La UI gestisce login JWT, filtro sessione e chiamate alle API energia.
 
 ## 🧪 Test
 
@@ -192,9 +208,7 @@ I test coprono:
 Il progetto include un loader di dati (`DataLoader`) che carica automaticamente i dati dal file `data.csv` al startup dell'applicazione.
 
 Il file `data.csv` deve contenere i dati di energia rinnovabile con la seguente struttura:
-```csv
-timestamp,source,power_output,efficiency
-```
+Il loader attuale si aspetta un formato data `dd.MM.yyyy-HH:mm` e 8 colonne di valori energetici.
 
 
 ## 📝 Configurazione

@@ -1,0 +1,886 @@
+\documentclass[a4paper,12pt]{report}
+
+% --- PACCHETTI ---
+\usepackage[utf8]{inputenc}
+\usepackage[italian]{babel}
+\usepackage{graphicx}     % Per le immagini
+\usepackage{hyperref}     % Per i link
+\usepackage{geometry}     % Per i margini
+\usepackage{listings}     % Per il codice
+\usepackage{xcolor}       % Per i colori del codice
+\usepackage{float}        % Per posizionare le tabelle/figure
+\usepackage{titlesec}     % Per lo stile dei titoli
+\usepackage{booktabs}     % Per tabelle più belle
+\usepackage{fancyhdr}     % Per intestazioni e piè di pagina
+
+% --- PACCHETTI PER DIAGRAMMI (TIKZ) ---
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows, positioning, calc}
+
+% --- CONFIGURAZIONE GEOMETRIA (RISOLVE PAGINA VUOTA) ---
+% Impostiamo solo i margini e l'altezza dell'header, lasciando a geometry il calcolo del resto.
+\geometry{
+ a4paper,
+ margin=2.5cm,      % Margine uniforme di 2.5cm
+ headheight=15pt    % Altezza header sufficiente per fancyhdr
+}
+
+% --- RISOLUZIONE SPAZI GRANDI VERTICALI ---
+% Evita che LaTeX stiri gli spazi verticali per riempire la pagina a tutti i costi.
+\raggedbottom 
+
+% --- STILE CODICE JAVA ---
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+
+\lstdefinestyle{javastyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    frame=single
+}
+\lstset{style=javastyle}
+
+% --- INTESTAZIONI ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Progetto Helios}
+\lhead{Sistemi Distribuiti}
+\cfoot{\thepage}
+
+% --- DATI PROGETTO ---
+\title{
+    \vspace{1cm} % Ridotto leggermente per sicurezza
+    \Huge \textbf{HELIOS} \\
+    \Large Sistema Distribuito per il Monitoraggio e l'Analisi di Impianti Fotovoltaici Industriali \\
+    \vspace{3cm}
+   \begin{figure}[h]
+    \centering
+    \includegraphics[width=0.2\textwidth]{university_logo.png}
+    \label{fig:esempio}
+\end{figure}
+    
+    \vspace{3cm}
+}
+\author{
+    \textbf{Studente:} [Simone Battiato] \\
+    \textbf{Matricola:} [1000031017] \\
+    \vspace{0.5cm} \\
+    \textit{Corso di Ingegneria dei Sistemi Distribuiti}
+}
+\date{Anno Accademico 2025/2026}
+
+\begin{document}
+
+\maketitle
+
+% --- ABSTRACT ---
+\begin{abstract}
+Il progetto descrive l'architettura, le scelte progettuali e l'implementazione di \textbf{Helios}, un sistema software distribuito per la gestione intelligente di impianti di produzione energetica rinnovabile. Il sistema simula uno scenario reale di monitoraggio per una Comunità Energetica (CER) o un impianto industriale, gestendo volumi di dati significativi (oltre 225 MWh annui).
+
+L'architettura segue il modello Client-Server RESTful, implementando pattern avanzati quali \textit{Remote Facade}, \textit{DTO}, \textit{Session State} e \textit{Request Batch}. Particolare attenzione è stata posta alla sicurezza (tramite protocollo JWT) e all'integrazione di sistemi di Intelligenza Artificiale Generativa (LLM) per il supporto decisionale.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% -------------------------------------------------------------------
+% CAPITOLO 1
+% -------------------------------------------------------------------
+\chapter{Introduzione e Contesto}
+
+\section{Scenario di Riferimento}
+Il progetto nasce per rispondere alle esigenze di un'azienda fittizia operante nel settore logistico che possiede un impianto fotovoltaico da circa 200 kWp installato sulla copertura del proprio stabilimento.
+
+L'azienda necessita di trasformare i dati grezzi provenienti dai sensori (SCADA/IoT) in informazioni strategiche per:
+\begin{itemize}
+    \item \textbf{Monitoraggio Tecnico:} Rilevare cali di efficienza dovuti a sporcizia o guasti.
+    \item \textbf{Controllo Economico:} Calcolare il ROI (Return on Investment) e il risparmio in bolletta.
+    \item \textbf{Sostenibilità:} Quantificare le emissioni di $CO_2$ evitate.
+\end{itemize}
+
+\section{Obiettivi del Sistema}
+Helios si propone di risolvere le criticità legate alla gestione passiva dell'impianto. Gli obiettivi principali sono:
+\begin{enumerate}
+    \item \textbf{Centralizzazione:} Aggregare dati eterogenei (produzione elettrica, dati meteo) in un unico database.
+    \item \textbf{Sicurezza:} Garantire l'accesso ai dati sensibili solo a personale autorizzato tramite token crittografici.
+    \item \textbf{Intelligence:} Fornire analisi predittive e diagnostiche utilizzando algoritmi statistici e IA Generativa.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% CAPITOLO 2
+% -------------------------------------------------------------------
+\chapter{Architettura del Sistema}
+
+\section{Panoramica Architetturale}
+Il sistema è basato su un'architettura distribuita a due livelli (Two-Tier), progettata per garantire disaccoppiamento e scalabilità.
+
+\begin{figure}[H]
+    \centering
+    % --- DIAGRAMMA ARCHITETTURALE (TIKZ) ---
+    \begin{tikzpicture}[node distance=2cm, auto,
+        thick,
+        % Stili dei nodi
+        component/.style={rectangle, draw=black, fill=blue!10, align=center, rounded corners, minimum height=3em, minimum width=6em},
+        database/.style={cylinder, draw=black, shape border rotate=90, aspect=0.25, fill=yellow!10, align=center, minimum height=4em, minimum width=3em},
+        external/.style={ellipse, draw=black, fill=red!10, align=center, minimum height=3em, minimum width=5em},
+        internet/.style={cloud, draw,cloud puffs=10,cloud puff arc=120, aspect=2, inner ysep=1em, fill=gray!10}
+    ]
+
+    % Posizionamento Nodi
+    \node [component] (client) {\textbf{Client CLI}\\(Java)};
+    \node [component, right=3cm of client] (server) {\textbf{Server Backend}\\(Spring Boot)};
+    \node [database, below=1.5cm of server] (db) {H2 DB\\(Data)};
+    \node [external, right=2.5cm of server] (llm) {Ollama\\(LLM)};
+
+    % Connessioni
+    \draw [->, thick] ([yshift=2mm]client.east) -- node [above, font=\footnotesize] {HTTP REST} ([yshift=2mm]server.west);
+    \draw [<-, thick] ([yshift=-2mm]client.east) -- node [below, font=\footnotesize] {JSON} ([yshift=-2mm]server.west);
+    \draw [<->, thick] (server) -- node [right, font=\footnotesize] {JPA} (db);
+    \draw [<->, thick] (server) -- node [above, font=\footnotesize] {HTTP} (llm);
+
+    % Etichette extra
+    \node[below=0.2cm of client, font=\scriptsize, color=gray] {Presentation Layer};
+    \node[above=0.2cm of server, font=\scriptsize, color=gray] {Business Layer};
+
+    \end{tikzpicture}
+    \caption{Schema ad alto livello dell'interazione tra i componenti del sistema Helios.}
+\end{figure}
+
+\subsection{Lato Server (Backend)}
+Il cuore del sistema è sviluppato in \textbf{Java} utilizzando il framework \textbf{Spring Boot}. Espone una serie di API RESTful che fungono da interfaccia per qualsiasi client autorizzato.
+\begin{itemize}
+    \item \textbf{Tecnologie:} Java 21, Spring Boot 3.5.8, Spring Security, JPA/Hibernate, Lombok.
+    \item \textbf{Database:} H2 Database (In-Memory) per la persistenza veloce dei dati durante la simulazione.
+    \item \textbf{Integrazione AI:} Modulo di comunicazione HTTP con \textbf{Ollama} (Llama 3.2 / Mistral) per l'elaborazione del linguaggio naturale.
+\end{itemize}
+
+\subsubsection{Componenti Backend}
+
+\paragraph{AuthController}
+Gestisce l'autenticazione e l'emissione dei token JWT. È l'unico endpoint pubblico del sistema.
+\begin{itemize}
+    \item \textbf{Endpoint:} \texttt{POST /api/auth/login}
+    \item \textbf{Responsabilità:} Verifica le credenziali (username/password), genere un token JWT con scadenza 24 ore, lo restituisce al client.
+    \item \textbf{Logica:} Estratto dalle credenziali il subject (utente), il token viene firmato con algoritmo HMAC-SHA256 ed include una data di scadenza.
+\end{itemize}
+
+\paragraph{EnergyController}
+Il componente centrale che exposifica tutti gli endpoint di business logic. Riceve richieste HTTP da client autenticati e orchestrata la business logic.
+\begin{itemize}
+    \item \textbf{Responsabilità:} Coordinare le operazioni di filtraggio, aggregazione, calcolo e analisi dei dati energetici.
+    \item \textbf{Endpoints Principali:}
+    \begin{enumerate}
+        \item \texttt{/daily-report-session}: Aggrega dati per giorno e calcola metriche (produzione totale, temperatura media, status).
+        \item \texttt{/batch-suggestions}: Esegue molteplici analisi in parallelo (best/worst day, anomalie).
+        \item \texttt{/wind-impact}: Analizza l'impatto della velocità del vento sulla produzione.
+        \item \texttt{/forecast}: Stima la produzione futura basata su medie storiche.
+        \item \texttt{/financial-report}: Calcola ROI, valore economico e CO\textsubscript{2} risparmiata.
+        \item \texttt{/peak-hours}: Identifica l'ora di massima produzione.
+        \item \texttt{/smart-analysis}: Delegamittelfatta alla LlmService per analisi AI.
+    \end{enumerate}
+\end{itemize}
+
+\paragraph{RenewableRepository}
+Interfaccia JPA che incapsula le operazioni di query al database H2. Offre metodi per filtrare dati per range temporale e recuperare tutti i dati.
+\begin{itemize}
+    \item \textbf{Metodi Chiave:} \texttt{findAll()}, \texttt{findByDateTimeBetween(start, end)}.
+    \item \texttt{Hibernate} genera automaticamente le query SQL ottimizzate.
+\end{itemize}
+
+\paragraph{LlmService}
+Servizio dedicato all'integrazione con il modello di linguaggio Ollama. Costruisce un prompt strutturato e invia una richiesta HTTP al server Ollama locale.
+\begin{itemize}
+    \item \textbf{Metodo Principale:} \texttt{askAi(String promptData)}
+    \item \textbf{Responsabilità:}
+    \begin{enumerate}
+        \item Arricchisce il prompt grezzo con un contesto professionale ("Sei un ingegnere energetico esperto...").
+        \item Crea una richiesta HTTP POST verso \texttt{http://localhost:11434/api/generate}.
+        \item Serializza i dati in JSON includendo il modello, il prompt, e flag di configurazione.
+        \item Attende la risposta dal modello LLM e la restituisce al caller.
+    \end{enumerate}
+    \item \textbf{Gestione Errori:} Se Ollama non è attivo, ritorna un messaggio di errore user-friendly.
+\end{itemize}
+
+\paragraph{UserSession}
+Mantiene il contesto di sessione dell'utente corrente, incluso il filtro temporale impostato.
+\begin{itemize}
+    \item \textbf{Stato Mantenuto:} Date di inizio/fine per il filtro, booleano per indicare se il filtro è attivo.
+    \item \textbf{Scopo:} Evitare che il client debba ripetere i parametri di filtro a ogni richiesta.
+    \item \textbf{Nota:} È uno \textbf{Scoped Bean} di Spring, quindi ogni sessione HTTP ottiene un'istanza separata.
+\end{itemize}
+
+\paragraph{SecurityConfig e JwtFilter}
+Configurano e applicano il meccanismo di sicurezza JWT.
+\begin{itemize}
+    \item \textbf{SecurityConfig:} Definisce quale URL è pubblico (\texttt{/api/auth/**}) e quale protected (\texttt{/api/energy/**}).
+    \item \textbf{JwtFilter:} Intercetta ogni richiesta, estrae il token dall'header, lo valida, e popola il SecurityContext se valido.
+\end{itemize}
+
+\subsection{Lato Client (Frontend CLI)}
+L'interfaccia utente è una \textbf{Command Line Interface (CLI)} avanzata sviluppata in Java puro. Utilizza le librerie standard \texttt{java.net.http} per comunicare con il backend.
+La scelta di una CLI enfatizza la natura "Enterprise" e di amministrazione remota del tool, permettendo l'esecuzione anche su server headless.
+
+\subsubsection{Architettura Client}
+Il client è organizzato attorno a un loop principale che:
+\begin{enumerate}
+    \item Stampa un menu di opzioni corrispondenti a diversi endpoint.
+    \item Legge l'input dell'utente.
+    \item Effettua la richiesta HTTP corrispondente al server backend.
+    \item Formatta e visualizza la risposta JSON in modo leggibile.
+\end{enumerate}
+
+\paragraph{Gestione del Token JWT}
+Il client memorizza il token JWT in una variabile statica (\texttt{jwtToken}) e lo allega automaticamente ad ogni richiesta nel header \texttt{Authorization: Bearer <token>}.
+
+\paragraph{Flusso Tipico}
+\begin{enumerate}
+    \item \textbf{Login:} Utente seleziona opzione 0, inserisce credenziali. Il client invia richiesta POST a \texttt{/api/auth/login}.
+    \item \textbf{Token Salvato:} Il token JWT viene estratto dalla risposta e salvato in memoria.
+    \item \textbf{Analisi Dati:} Utente seleziona operazione (es. opzione 1 per report). Il client allega il token e invia la richiesta.
+    \item \textbf{Visualizzazione:} La risposta JSON viene parsedata e presentata all'utente in formato leggibile.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% CAPITOLO 3
+% -------------------------------------------------------------------
+\chapter{Design Pattern Implementati}
+
+Per soddisfare i requisiti di ingegneria del software, sono stati implementati diversi pattern architetturali.
+
+\section{Remote Facade}
+Per ridurre la latenza di rete e il numero di chiamate ("chattiness"), il server espone API \textit{Coarse-Grained}. Il controller \texttt{EnergyController} agisce da facciata, incapsulando la complessità della logica di business.
+\begin{itemize}
+    \item \textbf{Esempio:} L'endpoint \texttt{/daily-report-session} non restituisce righe grezze del database, ma un report già aggregato e calcolato (data, produzione totale, temperatura media, status).
+    \item \textbf{Vantaggi:} Riduce il traffico di rete, il client non deve effettuare molteplici richieste, la logica resta centralizzata sul server.
+\end{itemize}
+
+\subsection{Implementazione Tecnica}
+Il client invoca un singolo endpoint e riceve un'intera lista di report giornalieri aggregati:
+
+\begin{lstlisting}[language=Java, caption=Aggregazione dati lato backend - Remote Facade]
+@GetMapping("/daily-report-session")
+public List<DailyReportDTO> getDailyReportsWithSession() {
+    List<RenewableData> allData = repository.findAll();
+    
+    // Filtro per range temporale (se attivo)
+    if (userSession.isFilterActive()) {
+        allData = allData.stream()
+            .filter(d -> d.getDateTime().toLocalDate()
+                    .isAfter(userSession.getStart())
+                && d.getDateTime().toLocalDate()
+                    .isBefore(userSession.getEnd()))
+            .collect(Collectors.toList());
+    }
+    
+    // Aggregazione per giorno
+    Map<LocalDate, List<RenewableData>> groupedByDay = 
+        allData.stream()
+            .collect(Collectors.groupingBy(
+                d -> d.getDateTime().toLocalDate()
+            ));
+    
+    // Trasformazione in DTO
+    return groupedByDay.entrySet().stream()
+        .map(entry -> {
+            LocalDate date = entry.getKey();
+            List<RenewableData> dailyData = entry.getValue();
+            
+            double totalProd = dailyData.stream()
+                .mapToDouble(RenewableData::getSystemProduction)
+                .sum();
+            double avgTemp = dailyData.stream()
+                .mapToDouble(RenewableData::getAirTemperature)
+                .average().orElse(0.0);
+            
+            String status = determineStatus(totalProd);
+            
+            return new DailyReportDTO(date, totalProd, avgTemp, status);
+        })
+        .sorted(Comparator.comparing(DailyReportDTO::getDate))
+        .collect(Collectors.toList());
+}
+\end{lstlisting}
+
+Tramite un'unica richiesta \texttt{GET /daily-report-session}, il client riceve un vettore di \texttt{DailyReportDTO} completamente elaborati e pronti per la visualizzazione.
+
+\section{Data Transfer Object (DTO)}
+I dati interni del database (Entity \texttt{RenewableData}) non vengono mai esposti direttamente ai client. Sono stati creati oggetti specifici per il trasporto dati, come \texttt{DailyReportDTO} e \texttt{BatchInsightsDTO}. 
+
+\subsection{Vantaggi del Pattern DTO}
+\begin{enumerate}
+    \item \textbf{Decoupling:} Il client non conosce la struttura interna dell'entità JPA, quindi modifiche allo schema del database non rompono il contratto API.
+    \item \textbf{Controllo:} Possiamo selezionare quali campi esporre e quali nascondere per ragioni di sicurezza.
+    \item \textbf{Trasformazione:} Il DTO può contenere campi calcolati che non esistono nel database (es. il campo "status").
+    \item \textbf{Validazione:} I DTO possono includere annotazioni di validazione Spring (\texttt{@NotNull}, \texttt{@Min}, etc.).
+\end{enumerate}
+
+\subsection{Struttura dei DTO}
+\begin{lstlisting}[language=Java, caption=Esempio di DTO]
+@Data
+@AllArgsConstructor
+public class DailyReportDTO {
+    private String date;          // Data del report
+    private Double totalProduction; // Produzione aggregata (kWh)
+    private Double avgTemperature;  // Temperatura media (°C)
+    private String status;          // NORMAL | HIGH_PERFORMANCE | LOW_GENERATION
+}
+\end{lstlisting}
+
+Nota i campi calcolati come \texttt{status}, che non esistono nella tabella \texttt{renewable\_data}, ma vengono generati dal server per fornire informazioni di alto livello al client.
+
+\section{Session State Pattern}
+Sebbene REST sia stateless per design, è stato implementato un meccanismo di sessione per migliorare l'esperienza utente nelle analisi continuative.
+
+\subsection{Problema Risolto}
+In un'architettura REST pura, ogni richiesta deve contenere tutti i parametri necessari. Se vogliamo analizzare i dati di un mese intero (es. gennaio 2017), dovremmo includere i parametri \texttt{start} e \texttt{end} in \textbf{ogni} richiesta:
+
+\begin{lstlisting}[language=bash]
+GET /api/energy/daily-report?start=2017-01-01&end=2017-01-31
+GET /api/energy/wind-impact?start=2017-01-01&end=2017-01-31
+GET /api/energy/forecast?start=2017-01-01&end=2017-01-31
+\end{lstlisting}
+
+\subsection{Soluzione: Session State}
+Il sistema implementa un meccanismo di sessione che centralizza i filtri:
+
+\begin{enumerate}
+    \item \textbf{Impostazione Filtro:} Il client invia una richiesta POST a \texttt{/session/filter} con i parametri temporali:
+    \begin{lstlisting}[language=bash]
+POST /api/energy/session/filter?start=2017-01-01&end=2017-01-31
+    \end{lstlisting}
+    
+    \item \textbf{Salvataggio in Sessione:} Il server estrae il range e lo memorizza in un bean \texttt{UserSession} scoped alla sessione HTTP:
+    \begin{lstlisting}[language=Java]
+@PostMapping("/session/filter")
+public String setSessionFilter(
+        @RequestParam String start, 
+        @RequestParam String end) {
+    userSession.setRange(
+        LocalDate.parse(start), 
+        LocalDate.parse(end)
+    );
+    return "Filtro sessione attivato: dal " 
+        + start + " al " + end;
+}
+    \end{lstlisting}
+    
+    \item \textbf{Riutilizzo:} Le richieste successive recuperano automaticamente il filtro dalla sessione:
+    \begin{lstlisting}[language=bash]
+GET /api/energy/daily-report-session  # Utilizza il filtro salvato
+GET /api/energy/wind-impact-session   # Stessa cosa
+    \end{lstlisting}
+\end{enumerate}
+
+\subsection{Implementazione Tecnica}
+\begin{lstlisting}[language=Java, caption=UserSession Bean]
+@Component
+@Scope("session")
+public class UserSession {
+    private LocalDate start;
+    private LocalDate end;
+    private boolean filterActive = false;
+    
+    public void setRange(LocalDate start, LocalDate end) {
+        this.start = start;
+        this.end = end;
+        this.filterActive = true;
+    }
+    
+    public boolean isFilterActive() {
+        return filterActive;
+    }
+    
+    // getter/setter...
+}
+\end{lstlisting}
+
+L'annotazione \texttt{@Scope("session")} del framework Spring garantisce che:
+- Ogni sessione HTTP riceve un'istanza separata di \texttt{UserSession}.
+- Lo stato è persistito finché la sessione rimane attiva (default 30 minuti).
+- Non ci sono interferenze tra utenti diversi.
+
+\section{Request Batch}
+Per ottimizzare la scoperta di informazioni critiche, l'endpoint \texttt{/batch-suggestions} esegue molteplici query in parallelo su tutto il dataset e restituisce un unico pacchetto JSON contenente le conclusioni più importanti.
+
+\subsection{Funzionamento}
+Anziché costringere il client a effettuare 4-5 richieste separate:
+\begin{lstlisting}[language=bash]
+GET /best-day
+GET /worst-day
+GET /anomalies
+GET /total-production
+GET /avg-efficiency
+\end{lstlisting}
+
+Un'unica richiesta \texttt{GET /batch-suggestions} elabora tutte queste analisi congiuntamente:
+
+\begin{lstlisting}[language=Java, caption=Request Batch - Implementazione]
+@GetMapping("/batch-suggestions")
+public BatchInsightsDTO getBatchSuggestions() {
+    List<RenewableData> allData = repository.findAll();
+    
+    // Trova il giorno migliore
+    RenewableData best = allData.stream()
+        .max(Comparator.comparing(
+            RenewableData::getSystemProduction
+        ))
+        .orElse(null);
+    
+    // Trova il giorno peggiore
+    RenewableData worst = allData.stream()
+        .filter(d -> d.getSystemProduction() > 0)
+        .min(Comparator.comparing(
+            RenewableData::getSystemProduction
+        ))
+        .orElse(null);
+    
+    // Calcola produzione totale
+    double totalSum = allData.stream()
+        .mapToDouble(RenewableData::getSystemProduction)
+        .sum();
+    
+    // Rileva anomalie (alta radiazione, bassa produzione)
+    RenewableData anomaly = allData.stream()
+        .filter(d -> d.getRadiation() > 100 
+                  && d.getSystemProduction() < 50)
+        .findFirst()
+        .orElse(null);
+    
+    String anomalyMsg = anomaly != null 
+        ? "ALERT: Giorno " + anomaly.getDateTime().toLocalDate()
+            + " - Radiazione: " + anomaly.getRadiation() + " ma Produzione: "
+            + anomaly.getSystemProduction()
+        : "Nessuna anomalia rilevata.";
+    
+    return new BatchInsightsDTO(
+        best != null ? best.getDateTime().toLocalDate() : "N/A",
+        best != null ? best.getSystemProduction() : 0.0,
+        worst != null ? worst.getDateTime().toLocalDate() : "N/A",
+        worst != null ? worst.getSystemProduction() : 0.0,
+        anomalyMsg,
+        totalSum
+    );
+}
+\end{lstlisting}
+
+\subsection{Risposta Batch}
+Una sola risposta JSON contiene tutte le informazioni critiche:
+\begin{lstlisting}[language=json, caption=Risposta /batch-suggestions]
+{
+    "bestDay": "2017-06-21",
+    "bestProduction": 3245.67,
+    "worstDay": "2017-12-05",
+    "worstProduction": 89.23,
+    "anomalyMessage": "ALERT: Giorno 2017-03-15 - Radiazione: 650 ma Produzione: 25",
+    "totalProduction": 456789.12
+}
+\end{lstlisting}
+
+Questo riduce drasticamente il numero di round-trip HTTP e la latenza globale percepita dal client.
+
+\section{Adapter Pattern - LLM Integration}
+
+\subsection{Problema e Contesto}
+L'integrazione con un sistema di generazione di linguaggio naturale (LLM) richiede adattare il formato dei dati energetici a quello atteso dal modello AI. Inoltre, il protocollo di comunicazione con Ollama (HTTP REST) deve essere incapsulato in modo trasparente dal resto dell'applicazione.
+
+\subsection{Soluzione: LlmService come Adapter}
+Il servizio \texttt{LlmService} funge da adapter tra il dominio energetico (EnergyController) e il dominio AI (Ollama).
+
+\begin{lstlisting}[language=Java, caption=LlmService - Orchestrazione richiesta LLM]
+@Service
+public class LlmService {
+    
+    private static final String OLLAMA_URL = 
+        "http://localhost:11434/api/generate";
+    private static final String MODEL_NAME = "llama3.2";
+    
+    public String askAi(String promptData) {
+        try {
+            // 1. Costruisci il prompt completo
+            String fullPrompt = 
+                "Sei un ingegnere energetico esperto. "
+                + "Analizza questi dati brevemente "
+                + "e dai un consiglio tecnico in italiano:\n" 
+                + promptData;
+            
+            // 2. Crea il body della richiesta
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", MODEL_NAME);
+            requestBody.put("prompt", fullPrompt);
+            requestBody.put("stream", false);
+            
+            // 3. Configura gli header HTTP
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> entity = 
+                new HttpEntity<>(requestBody, headers);
+            
+            // 4. Invia la richiesta a Ollama
+            RestTemplate restTemplate = new RestTemplate();
+            Map<String, Object> response = 
+                restTemplate.postForObject(
+                    OLLAMA_URL, 
+                    entity, 
+                    Map.class
+                );
+            
+            // 5. Estrai e ritorna la risposta
+            if (response != null && response.containsKey("response")) {
+                return response.get("response").toString();
+            }
+            return "Errore: risposta vuota dalla LLM.";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Errore: Ollama non raggiungibile. "
+                + "Esegui 'ollama serve'.";
+        }
+    }
+}
+\end{lstlisting}
+
+\subsection{Flusso di Richiesta All'LLM}
+
+Quando il client richiede l'analisi AI tramite l'opzione 9:
+
+\begin{enumerate}
+    \item \textbf{Client Istanza:} Utente seleziona opzione 9 e specifica un range data (es. 2017-06-01 a 2017-06-30).
+    
+    \item \textbf{Request HTTP:}
+    \begin{lstlisting}[language=bash]
+GET /api/energy/smart-analysis?start=2017-06-01&end=2017-06-30
+Authorization: Bearer <jwt_token>
+    \end{lstlisting}
+    
+    \item \textbf{Elaborazione Backend:}
+    \begin{lstlisting}[language=Java]
+@GetMapping("/smart-analysis")
+public String getSmartAnalysis(
+        @RequestParam(required = false) String start, 
+        @RequestParam(required = false) String end) {
+    
+    // Estrai dati dal range (max 15 record)
+    List<RenewableData> dataToAnalyze;
+    if (start != null && end != null) {
+        LocalDateTime startDate = 
+            LocalDate.parse(start).atStartOfDay();
+        LocalDateTime endDate = 
+            LocalDate.parse(end).atTime(23, 59, 59);
+        dataToAnalyze = repository.findByDateTimeBetween(
+            startDate, 
+            endDate
+        );
+    } else {
+        dataToAnalyze = repository.findAll().stream()
+            .sorted((a, b) -> b.getDateTime()
+                    .compareTo(a.getDateTime()))
+            .limit(3)  // Default: ultimi 3 record
+            .collect(Collectors.toList());
+    }
+    
+    // Limita a 15 record per non sovracaricare LLM
+    if (dataToAnalyze.size() > 15) {
+        dataToAnalyze = dataToAnalyze.stream()
+            .limit(15)
+            .collect(Collectors.toList());
+    }
+    
+    // Costruisci il context dati
+    StringBuilder dataContext = new StringBuilder();
+    for (RenewableData d : dataToAnalyze) {
+        dataContext.append(String.format(
+            "- Data: %s, Prod: %.2f, Radiazione: %.1f, "
+            + "Temp: %.1f, Vento: %.1f, Umidità: %d%%\n",
+            d.getDateTime(),
+            d.getSystemProduction(),
+            d.getRadiation(),
+            d.getAirTemperature(),
+            d.getWindSpeed(),
+            d.getRelativeAirHumidity()
+        ));
+    }
+    
+    // Delegama a LlmService
+    return llmService.askAi(dataContext.toString());
+}
+    \end{lstlisting}
+    
+    \item \textbf{Prompt Inviato a Ollama:} Un esempio di prompt generato:
+    \begin{lstlisting}[language=bash, caption=Prompt AI generato]
+Sei un ingegnere energetico esperto. Analizza questi dati 
+brevemente e dai un consiglio tecnico in italiano:
+- Data: 2017-06-15, Prod: 2345.67, Radiazione: 850.0, 
+  Temp: 28.5, Vento: 3.2, Umidità: 45%
+- Data: 2017-06-16, Prod: 2198.34, Radiazione: 820.0, 
+  Temp: 27.8, Vento: 4.1, Umidità: 52%
+- Data: 2017-06-17, Prod: 2567.89, Radiazione: 880.0, 
+  Temp: 29.1, Vento: 2.9, Umidità: 40%
+    \end{lstlisting}
+    
+    \item \textbf{Richiesta HTTP a Ollama:} Il LlmService serializza il prompt in JSON:
+    \begin{lstlisting}[language=json, caption=Body POST a http://localhost:11434/api/generate]
+{
+    "model": "llama3.2",
+    "prompt": "Sei un ingegnere energetico esperto...",
+    "stream": false
+}
+    \end{lstlisting}
+    
+    \item \textbf{Risposta Ollama:} Dopo alcuni secondi, Ollama ritorna:
+    \begin{lstlisting}[language=json, caption=Risposta da Ollama]
+{
+    "response": "Analizzando i dati forniti, osservo una produzione 
+        stabile con un picco il 17 giugno. Le condizioni meteo sono 
+        favorevoli: radiazione elevata e temperature moderate. 
+        La velocità del vento di 4.1 m/s nel 16 giugno ha contribuito 
+        al leggero calo di produzione rispetto al 15. Consiglio: 
+        effettuare pulizia dei moduli per optimizzare l'irraggiamento 
+        in scenari con foschia.",
+    "created_at": "2026-03-05T10:30:00Z",
+    "done": true
+}
+    \end{lstlisting}
+    
+    \item \textbf{Risposta al Client:} Il backend estrae il campo \texttt{response} e lo ritorna al client:
+    \begin{lstlisting}[language=bash, caption=Risposta finale al client CLI]
+ANALISI INTELLIGENTE (Ollama - Llama3.2):
+
+Analizzando i dati forniti, osservo una produzione stabile 
+con un picco il 17 giugno. Le condizioni meteo sono favorevoli:
+radiazione elevata e temperature moderate. La velocità del vento 
+di 4.1 m/s nel 16 giugno ha contribuito al leggero calo di produzione 
+rispetto al 15. Consiglio: effettuare pulizia dei moduli per optimizzare 
+l'irraggiamento in scenari con foschia.
+    \end{lstlisting}
+\end{enumerate}
+
+\subsection{Configurazione Ollama}
+Per poter utilizzare questa funzionalità, è necessario:
+\begin{enumerate}
+    \item Installare Ollama da \texttt{https://ollama.ai}
+    \item Avviare il server: \texttt{ollama serve}
+    \item Scarica il modello: \texttt{ollama pull llama3.2}
+    \item Verificare che sia raggiungibile su \texttt{http://localhost:11434}
+\end{enumerate}
+
+Modelli alternativi compatibili: \texttt{mistral}, \texttt{neural-chat}, \texttt{codellama}.
+
+% -------------------------------------------------------------------
+% CAPITOLO 4 (AGGIORNATO)
+% -------------------------------------------------------------------
+\chapter{Analisi Dati e Funzionalità}
+
+Il valore aggiunto di Helios risiede nei suoi algoritmi di analisi. Di seguito le principali metriche implementate.
+
+\section{Analisi Economica ed Ecologica}
+Il sistema traduce i kWh prodotti in valore monetario e impatto ambientale.
+\begin{lstlisting}[language=Java, caption=Algoritmo di calcolo ROI e CO2]
+double totalValue = totalKwh * 0.20; // Prezzo medio energia
+double co2Saved = totalKwh * 0.4;    // Fattore emissione mix energetico
+\end{lstlisting}
+Dai dati analizzati, l'impianto ha generato un risparmio stimato di oltre \textbf{45.000 \texteuro} e ha evitato l'emissione di \textbf{90 tonnellate di $CO_2$}.
+
+\section{Correlazioni Ambientali (Vento e Umidità)}
+Il sistema analizza come le variabili meteo influenzano la produzione.
+\begin{itemize}
+    \item \textbf{Impatto Vento:} È stato rilevato che venti superiori a 4 m/s aumentano l'efficienza dei pannelli (raffreddamento naturale), incrementando la produzione media in modo significativo.
+    \item \textbf{Impatto Umidità:} Al contrario, alti tassi di umidità sono stati correlati a una diminuzione della resa, spesso associata a foschia o nuvolosità.
+\end{itemize}
+
+\section{Intelligenza Artificiale Generativa}
+Tramite l'opzione 9 del Client, il sistema invia un sottoinsieme di dati critici a una LLM locale.
+\begin{itemize}
+    \item \textbf{Input:} Dati grezzi (es. "Prod: 0, Radiazione: 600").
+    \item \textbf{Output:} Report discorsivo (es. "Attenzione: rilevata anomalia critica. Irraggiamento presente ma produzione assente. Probabile guasto inverter.").
+\end{itemize}
+
+\section{Forecasting e Ore di Picco}
+Il sistema offre funzionalità predittive basate su medie mobili storiche e identifica le fasce orarie di picco per permettere strategie di \textit{Load Shifting} (spostamento dei carichi industriali).
+
+% -------------------------------------------------------------------
+% CAPITOLO 5
+% -------------------------------------------------------------------
+\chapter{Sicurezza e Flusso Dati}
+
+La sicurezza di Helios è progettata attorno al paradigma \textbf{Stateless}. A differenza delle sessioni server-side tradizionali (che richiedono memoria sul server per ogni utente attivo), l'architettura RESTful adotta un approccio basato su \textbf{Token JWT (JSON Web Token)}. 
+
+Questo garantisce la scalabilità orizzontale: ogni richiesta HTTP è autosufficiente e contiene tutte le informazioni necessarie per identificare il richiedente.
+
+\section{Fase 1: Negoziazione del Token (Handshake)}
+Il flusso di sicurezza inizia quando un operatore tenta di accedere al sistema. Poiché il server non mantiene memoria delle connessioni passate, è necessaria una fase preliminare di autenticazione.
+
+\begin{enumerate}
+    \item \textbf{Invio Credenziali:} Il Client CLI raccoglie username e password e invia una richiesta \texttt{POST} all'endpoint pubblico \texttt{/api/auth/login}.
+    \item \textbf{Verifica e Firma:} Il server verifica l'hash della password nel database. Se corretto, genera un token JWT firmato con algoritmo \texttt{HMAC-SHA256} contenente:
+    \begin{itemize}
+        \item \textit{Subject:} L'identificativo dell'utente (es. "admin").
+        \item \textit{Expiration:} La data di scadenza (fissata a 24 ore).
+        \item \textit{Signature:} Una firma crittografica per prevenire manomissioni.
+    \end{itemize}
+    \item \textbf{Consegna:} Il token viene restituito al client, che lo memorizza in una variabile locale per le richieste future.
+\end{enumerate}
+
+\section{Fase 2: Il Viaggio della Richiesta}
+Una volta autenticato, ogni volta che il client richiede un report (es. \texttt{/daily-report}), deve presentare il "pass" digitale ottenuto. 
+
+La Figura \ref{fig:high_level_flow} illustra il percorso fisico e logico che una richiesta compie all'interno dello stack tecnologico Spring Boot.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[node distance=1.5cm, auto,
+        block/.style={rectangle, draw, fill=blue!5, text width=12em, text centered, rounded corners, minimum height=3em, drop shadow},
+        cloud/.style={draw, ellipse, fill=red!10, node distance=3cm, minimum height=2em},
+        arrow/.style={thick, ->, >=stealth}
+    ]
+
+    % Nodi
+    \node [cloud] (client) {\textbf{Client CLI}};
+    \node [block, below=1cm of client] (tomcat) {1. \textbf{Tomcat Container}\\(Ricezione Pacchetto HTTP)};
+    \node [block, below=0.8cm of tomcat] (dispatcher) {2. \textbf{Dispatcher Servlet}\\(Routing Centrale)};
+    \node [block, below=1cm of dispatcher, fill=orange!10, text width=14em] (security) {3. \textbf{Security Filter Chain}\\(Ispezione e Validazione)};
+    \node [block, below=1cm of security, fill=green!10] (controller) {4. \textbf{Energy Controller}\\(Logica di Business)};
+
+    % Archi descrittivi
+    \draw [arrow] (client) -- node [right] {\footnotesize Header: \texttt{Authorization: Bearer <token>}} (tomcat);
+    \draw [arrow] (tomcat) -- (dispatcher);
+    \draw [arrow] (dispatcher) -- node [right] {\footnotesize Intercettazione} (security);
+    \draw [arrow] (security) -- node [right] {\footnotesize Utente Autenticato} (controller);
+    
+    % Ritorno
+    \draw [->, dashed, color=gray] (controller.east) to[out=0,in=0] node [right] {\footnotesize JSON Response} (client.east);
+
+    \end{tikzpicture}
+    \caption{Panoramica del flusso di richiesta: dal Client al Controller attraverso i layer di sicurezza.}
+    \label{fig:high_level_flow}
+\end{figure}
+
+Come evidenziato nello schema:
+\begin{itemize}
+    \item La richiesta viene intercettata dalla \textbf{Security Chain} prima ancora che il Controller sappia della sua esistenza.
+    \item Se la catena di sicurezza fallisce, la richiesta viene respinta immediatamente, risparmiando risorse di elaborazione.
+\end{itemize}
+
+\section{Fase 3: Il Filtro JWT (Deep Dive)}
+Il componente critico dell'architettura è il \texttt{JwtFilter}. Questo filtro agisce come un "doganiere" all'ingresso del sistema.
+La logica decisionale, illustrata nella Figura \ref{fig:security_chain_detail}, segue un algoritmo rigoroso per determinare se lasciar passare la richiesta o bloccarla.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{1\textwidth}{!}{ 
+    \begin{tikzpicture}[node distance=2cm, auto,
+        decision/.style={diamond, draw, fill=yellow!20, text width=5em, text bad centered, inner sep=0pt},
+        block/.style={rectangle, draw, fill=blue!10, text width=9em, text centered, rounded corners, minimum height=3em},
+        line/.style={draw, thick, -latex'},
+        error/.style={rectangle, draw, fill=red!20, text centered, rounded corners, minimum height=3em}
+    ]
+
+    % --- NODI ---
+    \node [block, fill=gray!20] (start) {\textbf{Ingresso Richiesta}};
+    
+    \node [decision, below=1cm of start] (hasheader) {Header "Bearer"\\Presente?};
+    
+    \node [decision, below=2cm of hasheader] (isvalid) {Firma e Data\\Valide?};
+    
+    \node [block, right=3cm of isvalid, fill=green!10] (context) {\textbf{Popola SecurityContext}\\(Utente Identificato)};
+    
+    \node [block, below=2.5cm of isvalid, fill=orange!10] (nextfilter) {\textbf{Authorization Filter}\\(Controllo Ruoli)};
+    
+    % Esiti negativi
+    \node [error, left=2cm of hasheader] (anon) {\textbf{Utente Anonimo}\\(Nessuna identità)};
+    \node [error, right=3cm of hasheader] (invalid) {\textbf{Token Corrotto}\\(Log Errore)};
+
+    % Esito finale
+    \node [block, below=1.5cm of nextfilter, fill=green!20] (success) {\textbf{Accesso Concesso}\\(Al Controller)};
+    \node [error, left=2cm of nextfilter] (denied) {\textbf{403 Forbidden}\\(Blocco)};
+
+    % --- FLUSSI ---
+    \path [line] (start) -- (hasheader);
+    
+    % Check Header
+    \path [line] (hasheader) -- node [right] {Sì} (isvalid);
+    \path [line] (hasheader) -- node [above] {No} (anon);
+    \path [line] (anon) |- (nextfilter); % Gli anonimi proseguono, ma verranno bloccati dopo se la risorsa è protetta
+    
+    % Check Token
+    \path [line] (isvalid) -- node [above] {Sì} (context);
+    \path [line] (isvalid) -| node [near start, above] {No (Scaduto/Falso)} (invalid);
+    
+    % Context to Next
+    \path [line] (context) |- (nextfilter);
+    
+    % Final Check
+    \path [line] (nextfilter) -- node [right] {Utente Autenticato?} (success);
+    \path [line] (nextfilter) -- node [above] {No} (denied);
+
+    \end{tikzpicture}
+    }
+    \caption{Logica decisionale interna al JwtFilter. Si noti come l'assenza del token non causi un errore immediato, ma porti al blocco nel filtro successivo (Authorization Filter) se la risorsa è protetta.}
+    \label{fig:security_chain_detail}
+\end{figure}
+
+\subsection{Dettaglio delle Operazioni}
+\begin{enumerate}
+    \item \textbf{Estrazione:} Il filtro ispeziona l'header HTTP cercando la stringa \texttt{Authorization}.
+    \item \textbf{Validazione:} Se trova un token, utilizza la chiave segreta (Secret Key) per ricalcolare la firma. Se la firma calcolata corrisponde a quella del token, significa che il dato non è stato alterato.
+    \item \textbf{Contestualizzazione:} Se il token è valido, il filtro crea un oggetto \texttt{Authentication} e lo inserisce nel \texttt{SecurityContextHolder}. 
+    \item \textbf{Autorizzazione:} Solo a questo punto Spring Security controlla se l'utente (ora identificato o rimasto anonimo) ha i permessi per l'URL richiesto. Se un utente anonimo tenta di accedere a \texttt{/api/energy}, riceverà un errore \textbf{403 Forbidden}.
+\end{enumerate}
+% -------------------------------------------------------------------
+% CAPITOLO 6
+% -------------------------------------------------------------------
+\chapter{Implementazione Client CLI}
+
+Il Client sviluppato (\texttt{HeliosClient.java}) funge da console di comando per l'operatore.
+
+\section{Struttura del Menu}
+Il client presenta un menu interattivo che guida l'utente attraverso le funzionalità:
+
+\begin{lstlisting}[language=bash, caption=Esempio di Menu CLI]
+MENU PRINCIPALE:
+✅ LOGGATO (Token Attivo)
+0. LOGIN (Richiesto!)
+1. Report Semplice
+2. Analisi Batch
+...
+7. Report Economico
+9. CHIEDI ALL'IA (Ollama)
+q. Esci
+\end{lstlisting}
+
+\section{Gestione dello Stato}
+Il client è stato progettato per essere "smart":
+\begin{itemize}
+    \item Gestisce automaticamente il ciclo di vita del \textbf{Token JWT}.
+    \item Gestisce la persistenza dei \textbf{Cookie di Sessione} per i filtri temporali.
+    \item Include logica di formattazione per presentare i JSON ricevuti in modo leggibile.
+\end{itemize}
+
+% -------------------------------------------------------------------
+% CONCLUSIONI
+% -------------------------------------------------------------------
+\chapter{Conclusioni}
+
+Il progetto Helios ha dimostrato con successo come un'architettura a microservizi (o client-server disaccoppiata) possa risolvere problemi reali nel dominio dell'energia.
+
+L'integrazione di pattern consolidati come Facade e DTO ha garantito performance e manutenibilità, mentre l'adozione di tecnologie emergenti come le LLM locali ha aggiunto un livello di accessibilità e intelligenza ai dati non comune nei sistemi SCADA tradizionali.
+
+I risultati ottenuti sul dataset di test confermano la validità economica e tecnica della soluzione per contesti industriali.
+
+\end{document}
+

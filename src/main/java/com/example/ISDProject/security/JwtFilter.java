@@ -26,7 +26,7 @@ public class JwtFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
         
-        if (path.startsWith("/api/auth/")) {
+        if (isPublicPath(path)) {
             chain.doFilter(request, response);
             return;
         }
@@ -66,5 +66,15 @@ public class JwtFilter extends OncePerRequestFilter {
         }
         
         chain.doFilter(request, response);
+    }
+
+    private boolean isPublicPath(String path) {
+        return path.equals("/")
+                || path.equals("/index.html")
+                || path.equals("/styles.css")
+                || path.equals("/app.js")
+                || path.equals("/favicon.ico")
+                || path.equals("/error")
+                || path.startsWith("/api/auth/");
     }
 }
