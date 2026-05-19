@@ -15,8 +15,11 @@ import org.springframework.web.client.RestTemplate;
 public class LlmService {
 
     private static final String OLLAMA_URL = "http://ollama:11434/api/generate";
-    // Try neural-chat first (faster); fallback to llama3.2
-    private static final String[] MODEL_NAMES = {"neural-chat", "llama3.2"};
+    // Models ranked by speed (fast) to quality (slow)
+    // neural-chat: ~30-60s, buona qualità
+    // tinyllama: ~5-10s, veloce ma meno accurato
+    // phi: ~10-20s, buon compromesso
+    private static final String[] MODEL_NAMES = {"neural-chat", "tinyllama", "phi", "llama3.2"};
 
     public String askAi(String promptData) {
         for (String model : MODEL_NAMES) {

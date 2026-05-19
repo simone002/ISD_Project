@@ -209,7 +209,11 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
 document.querySelectorAll("[data-action]").forEach((button) => {
   button.addEventListener("click", async () => {
     try {
-      await runAction(button.dataset.action);
+      const action = button.dataset.action;
+      if (action === "smart") {
+        renderOutput("⏳ Analisi IA in corso... (può richiedere 30-60 secondi)");
+      }
+      await runAction(action);
     } catch (error) {
       renderOutput(`Errore richiesta: ${error.message}`);
     }
