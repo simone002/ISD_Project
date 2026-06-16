@@ -2,11 +2,13 @@ package com.example.ISDProject.security;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import jakarta.servlet.FilterChain;
@@ -18,18 +20,20 @@ import jakarta.servlet.http.HttpServletResponse;
 public class JwtFilter extends OncePerRequestFilter {
 
     @Autowired
-    private JwtUtil jwtUtil; 
+    private JwtUtil jwtUtil;
+
+    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return Arrays.stream(SecurityConstants.PUBLIC_PATHS)
+                .anyMatch(pattern -> pathMatcher.match(pattern, path));
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-
-        String path = request.getRequestURI();
-        
-        if (isPublicPath(path)) {
-            chain.doFilter(request, response);
-            return;
-        }
 
         String header = request.getHeader("Authorization");
 
@@ -66,15 +70,5 @@ public class JwtFilter extends OncePerRequestFilter {
         }
         
         chain.doFilter(request, response);
-    }
-
-    private boolean isPublicPath(String path) {
-        return path.equals("/")
-                || path.equals("/index.html")
-                || path.equals("/styles.css")
-                || path.equals("/app.js")
-                || path.equals("/favicon.ico")
-                || path.equals("/error")
-                || path.startsWith("/api/auth/");
     }
 }

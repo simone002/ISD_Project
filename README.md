@@ -11,7 +11,7 @@ Il progetto è un sistema di gestione dati energetici che consente di:
 - **Gestione Dati**: Caricamento e memorizzazione dati di energia rinnovabile
 - **Analisi**: Report giornalieri e insights batch sui dati energetici
 - **Filtri Sessione**: Filtraggio dati per intervalli di date specifici
-- **Integrazione LLM**: Analisi avanzata tramite Large Language Models
+- **Integrazione LLM**: Analisi avanzata tramite la Groq API (modelli Llama/Mixtral)
 
 ---
 
@@ -20,9 +20,10 @@ Il progetto è un sistema di gestione dati energetici che consente di:
 - **Java**: 21
 - **Spring Boot**: 3.5.8
 - **Build Tool**: Maven
-- **Database**: PostgreSQL via Docker
+- **Database**: PostgreSQL via Docker (H2 in-memory solo per i test)
 - **ORM**: JPA/Hibernate
 - **Sicurezza**: Spring Security + JWT (JJWT 0.11.5)
+- **LLM**: Groq API (endpoint OpenAI-compatible)
 - **Parsing CSV**: OpenCSV 5.9
 - **Lombok**: Per ridurre boilerplate
 
@@ -190,16 +191,15 @@ La UI gestisce login JWT, filtro sessione e chiamate alle API energia.
 
 ## 🧪 Test
 
-Per eseguire i test unitari:
+Il progetto è predisposto per i test con un profilo H2 in-memory dedicato
+([src/test/resources/application.properties](src/test/resources/application.properties)),
+ma al momento **non sono presenti classi di test** in `src/test/java`.
+
+Quando verranno aggiunte, si eseguono con:
 
 ```bash
 mvn test
 ```
-
-I test coprono:
-- `AuthControllerTest`: Test autenticazione e JWT
-- `EnergyControllerTest`: Test gestione dati energetici
-- `IsdProjectHeliosApplicationTests`: Test avvio applicazione
 
 ---
 
@@ -217,11 +217,19 @@ File: `src/main/resources/application.properties`
 
 ```properties
 spring.application.name=ISDProjectHelios
-spring.datasource.url=jdbc:h2:mem:heliosdb
+spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/heliosdb}
 spring.jpa.show-sql=true
 spring.jackson.date-format=yyyy-MM-dd HH:mm:ss
 spring.jackson.time-zone=UTC
 ```
+
+Tutti i valori sono sovrascrivibili via variabili d'ambiente:
+
+| Variabile | Descrizione | Default |
+|-----------|-------------|---------|
+| `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Connessione PostgreSQL | `jdbc:postgresql://localhost:5432/heliosdb`, `admin`/`admin` |
+| `GROQ_API_KEY` | Chiave Groq per l'analisi LLM (`/smart-analysis`). Senza chiave l'endpoint restituisce un avviso. | *(vuoto)* |
+| `JWT_SECRET` | Secret di firma JWT (min. 32 caratteri). **Impostare un valore forte in produzione.** | placeholder in `application.properties` |
 
 ---
 
@@ -268,8 +276,9 @@ Verifica che:
 - Il token non sia scaduto
 - Il token sia stato generato con le credenziali corrette
 
-### Database H2 non disponibile
-Verifica che `spring.h2.console.enabled=true` in `application.properties`.
+### Database PostgreSQL non disponibile
+Verifica che il container `postgres` sia attivo (`docker compose ps`) e che
+`SPRING_DATASOURCE_URL` punti all'host corretto (`localhost` in locale, `postgres` dentro Docker).
 
 ---
 
