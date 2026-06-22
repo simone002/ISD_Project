@@ -1,313 +1,239 @@
 # ISDProjectHelios
 
-**ISDProjectHelios** è un'applicazione Spring Boot per l'analisi e la gestione dei dati di energia rinnovabile. L'applicazione fornisce API RESTful per monitorare, filtrare e generare report su dati energetici da fonti rinnovabili.
+**Helios** è un sistema distribuito Spring Boot per il monitoraggio e l'analisi di un impianto
+fotovoltaico industriale. Espone un'API REST protetta da JWT, serve una dashboard web e arricchisce
+le analisi con commenti generati da un LLM tramite la **Groq API**. Realizzato per il corso di
+*Ingegneria dei Sistemi Distribuiti*.
 
 ---
 
-## 📋 Descrizione del Progetto
+## 📋 Cosa fa
 
-Il progetto è un sistema di gestione dati energetici che consente di:
-- **Autenticazione**: Accesso sicuro tramite JWT (JSON Web Tokens)
-- **Gestione Dati**: Caricamento e memorizzazione dati di energia rinnovabile
-- **Analisi**: Report giornalieri e insights batch sui dati energetici
-- **Filtri Sessione**: Filtraggio dati per intervalli di date specifici
-- **Integrazione LLM**: Analisi avanzata tramite la Groq API (modelli Llama/Mixtral)
+- **Autenticazione** sicura tramite JWT, con rate limiting anti brute-force sul login
+- **Report giornalieri e mensili** aggregati dai dati grezzi dei sensori
+- **Rilevamento guasti**: identifica fermi impianto raggruppando i giorni consecutivi a produzione nulla
+- **Analisi**: impatto del vento, previsione produzione (media mobile esponenziale), ore di picco
+- **Report economico ed ecologico**: valore in € e CO₂ risparmiata
+- **Analisi AI**: interrogazione di un LLM (Groq) per valutazioni tecnico-narrative sui dati
+- **Resilienza**: Circuit Breaker a protezione della dipendenza esterna (Groq)
 
 ---
 
-## 🛠️ Tecnologie Utilizzate
+## 🛠️ Stack Tecnologico
 
-- **Java**: 21
-- **Spring Boot**: 3.5.8
-- **Build Tool**: Maven
-- **Database**: PostgreSQL via Docker (H2 in-memory solo per i test)
-- **ORM**: JPA/Hibernate
-- **Sicurezza**: Spring Security + JWT (JJWT 0.11.5)
-- **LLM**: Groq API (endpoint OpenAI-compatible)
-- **Parsing CSV**: OpenCSV 5.9
-- **Lombok**: Per ridurre boilerplate
-
-### Dipendenze Principali
-
-```xml
-- spring-boot-starter-web
-- spring-boot-starter-data-jpa
-- spring-boot-starter-security
-- spring-boot-starter-test
-- jjwt (jsonwebtoken)
-- h2database
-- opencsv
-- lombok
-```
+| Componente | Tecnologia |
+|------------|------------|
+| Backend | Java 21 + Spring Boot 3.5.8 |
+| Sicurezza | Spring Security + JWT (JJWT 0.11.5, HS256) |
+| Persistenza | JPA/Hibernate + PostgreSQL 16 (Docker) |
+| Database (test) | H2 in-memory |
+| LLM | Groq API (endpoint OpenAI-compatible) |
+| Cache | Spring Cache (`@Cacheable`) |
+| Documentazione API | Springdoc OpenAPI / Swagger UI |
+| Frontend | Dashboard HTML/CSS/JS + Chart.js |
+| Parsing CSV | OpenCSV 5.9 |
+| Boilerplate | Lombok |
+| Containerizzazione | Docker + Docker Compose |
 
 ---
 
 ## 📁 Struttura del Progetto
 
 ```
-ISDProject/
-├── src/
-│   ├── main/
-│   │   ├── java/com/example/ISDProject/
-│   │   │   ├── controller/          # API REST endpoints
-│   │   │   │   ├── AuthController   # Autenticazione
-│   │   │   │   └── EnergyController # Gestione dati energetici
-│   │   │   ├── service/             # Logica di business
-│   │   │   │   ├── LlmService       # Integrazione LLM
-│   │   │   │   └── UserSession      # Gestione sessione utente
-│   │   │   ├── model/               # Entità JPA
-│   │   │   │   └── RenewableData    # Dati energia rinnovabile
-│   │   │   ├── repository/          # Data access layer
-│   │   │   │   └── RenewableRepository
-│   │   │   ├── dto/                 # Data Transfer Objects
-│   │   │   │   ├── BatchInsightsDTO
-│   │   │   │   └── DailyReportDTO
-│   │   │   ├── security/            # Configurazione sicurezza
-│   │   │   │   ├── SecurityConfig   # Configurazione Spring Security
-│   │   │   │   ├── JwtUtil          # Utilità JWT
-│   │   │   │   └── JwtFilter        # Filtro autenticazione
-│   │   │   ├── client/              # Client HTTP
-│   │   │   │   └── HeliosClient     # Client per servizi Helios
-│   │   │   ├── util/                # Utilità
-│   │   │   │   └── DataLoader       # Caricamento dati
-│   │   │   └── IsdProjectHeliosApplication.java  # Main application
-│   │   └── resources/
-│   │       ├── application.properties # Configurazione backend
-│   │       └── static/                # Frontend SPA servita da Spring Boot
-│   └── test/                         # Test unitari
-├── pom.xml                           # Configurazione Maven
-├── data.csv                          # File dati di esempio
-└── README.md                         # Questo file
+src/main/java/com/example/ISDProject/
+├── controller/        # Strato REST
+│   ├── AuthController        # Login + emissione token JWT
+│   └── EnergyController      # Endpoint analitici (+ Idempotent Receiver)
+├── service/           # Logica di business
+│   ├── EnergyService         # Analisi, report, rilevamento guasti
+│   └── LlmService            # Proxy verso la Groq API
+├── security/          # Autenticazione e autorizzazione
+│   ├── SecurityConfig        # Regole Spring Security
+│   ├── JwtFilter             # Protection Proxy / Reference Monitor
+│   ├── JwtUtil               # Generazione/validazione token (HS256)
+│   ├── SecurityConstants     # Fonte unica dei path pubblici
+│   └── LoginRateLimiter      # Rate limiting anti brute-force
+├── resilience/        # Resilienza
+│   └── CircuitBreaker        # Macchina a stati CLOSED/OPEN/HALF_OPEN
+├── session/           # Stato di sessione
+│   └── UserSession           # Filtro temporale (@SessionScope)
+├── repository/        # Accesso ai dati
+│   └── RenewableRepository   # JpaRepository
+├── model/             # Entità JPA
+│   └── RenewableData         # Una misurazione oraria
+├── dto/               # Data Transfer Object
+│   ├── DailyReportDTO
+│   ├── BatchInsightsDTO
+│   └── MonthlySummaryDTO
+├── config/            # Bootstrap
+│   └── DataLoader            # Import CSV all'avvio
+└── IsdProjectHeliosApplication.java
+
+src/main/resources/
+├── application.properties    # Configurazione (override via env)
+└── static/                   # Dashboard SPA (index.html, app.js, styles.css)
 ```
 
 ---
 
 ## 🚀 Avvio Rapido
 
-### Prerequisiti
-- Java 21 JDK installato
-- Maven wrapper incluso nel progetto
-- Docker e Docker Compose per Postgres
+### Con Docker (consigliato)
 
-### Installazione
+Avvia PostgreSQL + backend con un comando:
 
-1. **Clonare il repository** (se disponibile su Git):
-   ```bash
-   git clone <repository-url>
-   cd ISDProject
-   ```
+```bash
+docker compose up --build
+```
 
-2. **Avviare il database e il backend con Docker**:
-  ```bash
-  docker compose up --build
-  ```
+I segreti (`GROQ_API_KEY`, `JWT_SECRET`) vengono letti automaticamente dal file `.env` nella root
+(vedi sezione [Configurazione](#-configurazione)). Poi apri:
 
-3. **Aprire il frontend**:
-  ```
-  http://localhost:8080/
-  ```
+```
+http://localhost:8080/
+```
 
-L'applicazione sarà disponibile su `http://localhost:8080`.
+### Senza Docker
+
+Serve un PostgreSQL raggiungibile su `localhost:5432` (db `heliosdb`, utente/pass `admin`/`admin`),
+poi:
+
+```bash
+# bash
+GROQ_API_KEY=gsk_... ./mvnw spring-boot:run
+
+# PowerShell
+$env:GROQ_API_KEY="gsk_..."; ./mvnw spring-boot:run
+```
+
+**Credenziali di accesso:** `admin` / `password`
+
+Al primo avvio, `DataLoader` importa automaticamente `data.csv` (formato data `dd.MM.yyyy-HH:mm`,
+8 colonne). I riavvii successivi saltano l'import se il database è già popolato.
 
 ---
 
 ## 📡 API Endpoints
 
+Tutti gli endpoint sotto `/api/energy/**` richiedono l'header `Authorization: Bearer <token>`.
+
 ### Autenticazione
 
-#### Login
-- **Endpoint**: `POST /api/auth/login`
-- **Parametri**:
-  - `username` (String): Nome utente (default: "admin")
-  - `password` (String): Password (default: "password")
-- **Risposta**:
-  ```json
-  {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-  ```
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| POST | `/api/auth/login` | Verifica credenziali, restituisce un token JWT. Rate-limited (5 tentativi/min per IP → 429). |
 
-### Gestione Energia
+### Energia
 
-#### Impostare Filtro Sessione
-- **Endpoint**: `POST /api/energy/session/filter`
-- **Parametri**:
-  - `start` (String): Data inizio (formato: YYYY-MM-DD)
-  - `end` (String): Data fine (formato: YYYY-MM-DD)
-- **Esempio**: `/api/energy/session/filter?start=2017-01-01&end=2017-01-31`
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| POST | `/api/energy/session/filter` | Imposta il filtro temporale di sessione (`start`, `end` in `YYYY-MM-DD`). Supporta header `Idempotency-Key`. |
+| GET | `/api/energy/daily-report-session` | Report giornaliero aggregato (usa il filtro di sessione). |
+| GET | `/api/energy/batch-suggestions` | Insights batch: giorno migliore/peggiore, totale, fermi impianto. *(cached)* |
+| GET | `/api/energy/monthly-summary` | Riepilogo mensile: produzione totale, media giornaliera, temperatura. |
+| GET | `/api/energy/wind-impact` | Impatto del vento sulla produzione (`start`/`end` opzionali). |
+| GET | `/api/energy/forecast` | Previsione con media mobile esponenziale + indicatore di tendenza. |
+| GET | `/api/energy/financial-report` | Valore economico (€) e CO₂ risparmiata. |
+| GET | `/api/energy/peak-hours` | Fascia oraria di massima produzione media. *(cached)* |
+| GET | `/api/energy/smart-analysis` | Analisi AI dei dati tramite Groq LLM. |
 
-#### Report Giornaliero Sessione
-- **Endpoint**: `GET /api/energy/daily-report-session`
-- **Descrizione**: Genera report giornaliero per l'intervallo di date impostato nella sessione
+Documentazione interattiva: **Swagger UI** su `/swagger-ui.html`.
 
-#### Insights Batch
-- **Endpoint**: `GET /api/energy/batch-insights`
-- **Descrizione**: Restituisce analisi batch e insights sui dati energetici
+---
+
+## 🎨 Design Pattern Implementati
+
+| Pattern | Dove | Scopo |
+|---------|------|-------|
+| **Remote Facade** | `EnergyController` / `EnergyService` | API a grana grossa, meno round-trip |
+| **DTO** | `dto/` | Disaccoppiare API e schema DB |
+| **Server Session State** | `UserSession` (`@SessionScope`) | Filtro temporale persistente per sessione |
+| **Request Batch** | `/batch-suggestions` | Più analisi in una sola chiamata |
+| **Remote Proxy** | `LlmService` | Nascondere la rete verso la Groq API |
+| **Protection Proxy** + **Reference Monitor** | `JwtFilter` + `SecurityConfig` | Punto di controllo unico e obbligatorio |
+| **Token Authentication** | `JwtUtil` (JWT, HS256) | Autenticazione stateless |
+| **Rate Limiting** | `LoginRateLimiter` | Difesa brute-force / DoS sul login |
+| **Circuit Breaker** | `CircuitBreaker` (`resilience/`) | Resilienza verso il servizio AI |
+| **Idempotent Receiver** | `/session/filter` | Retry sicuri senza effetti doppi |
 
 ---
 
 ## 🔐 Sicurezza
 
-- **Autenticazione**: JWT Token-based
-- **Autorizzazione**: Spring Security con filtri JWT
-- **Validazione Token**: Verifica firma e scadenza token
-- **Credenziali Default**:
-  - Username: `admin`
-  - Password: `password`
-
-⚠️ **Nota**: In produzione, cambiare le credenziali e configurare un provider di autenticazione più robusto.
-
----
-
-## 💾 Database
-
-L'applicazione utilizza **PostgreSQL** come database principale.
-
-### Docker
-
-Il file [docker-compose.yml](docker-compose.yml) avvia:
-- un container `postgres` con utente default `admin`
-- un container `app` con il backend Spring Boot
-
-### Parametri di default
-
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/heliosdb
-spring.datasource.username=admin
-spring.datasource.password=admin
-```
+- **Autenticazione stateless** via JWT firmato con HMAC-SHA256, scadenza 24h.
+- La **chiave di firma** è derivata da `JWT_SECRET` (configurabile), così i token restano validi
+  tra riavvii e tra istanze.
+- `JwtFilter` valida ogni richiesta protetta e popola il `SecurityContext`; i path pubblici sono
+  definiti una sola volta in `SecurityConstants`.
+- **Rate limiting** sul login: 5 tentativi falliti per IP in 60 secondi → HTTP 429.
+- **Credenziali** hardcoded per scopo didattico (`admin`/`password`): in produzione vanno sostituite
+  con un provider reale.
 
 ---
 
-## 🖥️ Frontend
+## ⚙️ Configurazione
 
-Il frontend è una dashboard statica servita direttamente da Spring Boot in:
-
-- [src/main/resources/static/index.html](src/main/resources/static/index.html)
-- [src/main/resources/static/styles.css](src/main/resources/static/styles.css)
-- [src/main/resources/static/app.js](src/main/resources/static/app.js)
-
-La UI gestisce login JWT, filtro sessione e chiamate alle API energia.
-
-## 🧪 Test
-
-Il progetto è predisposto per i test con un profilo H2 in-memory dedicato
-([src/test/resources/application.properties](src/test/resources/application.properties)),
-ma al momento **non sono presenti classi di test** in `src/test/java`.
-
-Quando verranno aggiunte, si eseguono con:
-
-```bash
-mvn test
-```
-
----
-
-## 📊 Caricamento Dati
-
-Il progetto include un loader di dati (`DataLoader`) che carica automaticamente i dati dal file `data.csv` al startup dell'applicazione.
-
-Il file `data.csv` deve contenere i dati di energia rinnovabile con la seguente struttura:
-Il loader attuale si aspetta un formato data `dd.MM.yyyy-HH:mm` e 8 colonne di valori energetici.
-
-
-## 📝 Configurazione
-
-File: `src/main/resources/application.properties`
-
-```properties
-spring.application.name=ISDProjectHelios
-spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/heliosdb}
-spring.jpa.show-sql=true
-spring.jackson.date-format=yyyy-MM-dd HH:mm:ss
-spring.jackson.time-zone=UTC
-```
-
-Tutti i valori sono sovrascrivibili via variabili d'ambiente:
+File: `src/main/resources/application.properties`. Tutti i valori sono sovrascrivibili da variabili
+d'ambiente.
 
 | Variabile | Descrizione | Default |
 |-----------|-------------|---------|
 | `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Connessione PostgreSQL | `jdbc:postgresql://localhost:5432/heliosdb`, `admin`/`admin` |
-| `GROQ_API_KEY` | Chiave Groq per l'analisi LLM (`/smart-analysis`). Senza chiave l'endpoint restituisce un avviso. | *(vuoto)* |
-| `JWT_SECRET` | Secret di firma JWT (min. 32 caratteri). **Impostare un valore forte in produzione.** | placeholder in `application.properties` |
+| `GROQ_API_KEY` | Chiave Groq per `/smart-analysis`. Senza chiave l'endpoint restituisce un avviso. | *(vuoto)* |
+| `JWT_SECRET` | Secret di firma JWT (min. 32 caratteri). **Impostare un valore forte in produzione.** | placeholder |
+| `circuitbreaker.failure-threshold` | Fallimenti consecutivi prima di aprire il circuito | `3` |
+| `circuitbreaker.cooldown-ms` | Durata dello stato OPEN prima del tentativo di ripristino | `60000` |
+
+### Gestione dei segreti
+
+Le chiavi **non sono committate**. In locale, crea un file `.env` nella root (già in `.gitignore`):
+
+```bash
+GROQ_API_KEY=gsk_la_tua_chiave
+JWT_SECRET=un-secret-forte-di-almeno-32-caratteri
+```
+
+Docker Compose lo legge automaticamente all'avvio.
 
 ---
 
-## 🛠️ Build e Deployment
+## 🧪 Test
 
-### Build JAR
+Esiste un profilo H2 in-memory dedicato
+([src/test/resources/application.properties](src/test/resources/application.properties)), ma al
+momento **non sono presenti classi di test** in `src/test/java`. Quando verranno aggiunte:
+
 ```bash
-mvn clean package
+./mvnw test
 ```
 
-L'eseguibile JAR sarà in: `target/ISDProjectHelios-0.0.1-SNAPSHOT.jar`
+---
 
-### Esecuzione JAR
+## 🛠️ Build
+
 ```bash
+./mvnw clean package            # build del jar -> target/ISDProjectHelios-0.0.1-SNAPSHOT.jar
+./mvnw -DskipTests package      # build senza test (come fa il Dockerfile)
 java -jar target/ISDProjectHelios-0.0.1-SNAPSHOT.jar
 ```
 
 ---
 
-## 📚 Moduli Principali
-
-### Service - LlmService
-Gestisce l'integrazione con Large Language Models per analisi avanzate dei dati energetici.
-
-### Service - UserSession
-Mantiene lo stato della sessione utente, inclusi i filtri di data attivi.
-
-### Model - RenewableData
-Entità JPA che rappresenta i record di dati energetici rinnovabili.
-
-### Security - JwtUtil
-Utilità per generazione e validazione token JWT.
-
----
-
 ## 🐛 Troubleshooting
 
-### Errore di formato data
-Se ricevi l'errore "Errore formato data", assicurati di usare il formato **YYYY-MM-DD**.
+**Errore formato data** — usa il formato `YYYY-MM-DD` per i parametri `start`/`end`.
 
-### Token non valido
-Verifica che:
-- Il token sia stato incluso nell'header Authorization
-- Il token non sia scaduto
-- Il token sia stato generato con le credenziali corrette
+**Token non valido (401)** — verifica che l'header `Authorization: Bearer <token>` sia presente e
+che il token non sia scaduto (validità 24h).
 
-### Database PostgreSQL non disponibile
-Verifica che il container `postgres` sia attivo (`docker compose ps`) e che
-`SPRING_DATASOURCE_URL` punti all'host corretto (`localhost` in locale, `postgres` dentro Docker).
+**`/smart-analysis` risponde con un avviso** — manca `GROQ_API_KEY`, oppure il Circuit Breaker è in
+stato OPEN dopo ripetuti fallimenti (riprova dopo il cooldown).
 
----
-
-## 📄 Licenza
-
-Questo progetto è distribuito sotto licenza non specificata. Consultare il file LICENSE per i dettagli.
+**Database non disponibile** — verifica che il container `postgres` sia attivo (`docker compose ps`)
+e che `SPRING_DATASOURCE_URL` punti all'host corretto (`localhost` in locale, `postgres` dentro Docker).
 
 ---
 
 ## 👤 Autore
 
-Progetto sviluppato come parte del corso di "Ingegneria dei Sistemi Distribuiti".
-
----
-
-## 📞 Supporto
-
-Per problemi o domande, contattare il team di sviluppo o consultare la documentazione ufficiale di Spring Boot.
-
----
-
-## 🔗 Risorse Utili
-
-- [Spring Boot Documentation](https://spring.io/projects/spring-boot)
-- [Spring Data JPA](https://spring.io/projects/spring-data-jpa)
-- [Spring Security](https://spring.io/projects/spring-security)
-- [JJWT - JWT Library](https://github.com/jwtk/jjwt)
-- [H2 Database](http://www.h2database.com/)
-
----
-
-**Ultimo aggiornamento**: Dicembre 2025
+Simone Battiato — Corso di *Ingegneria dei Sistemi Distribuiti*, A.A. 2025/2026.
