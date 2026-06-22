@@ -51,26 +51,28 @@ function renderChart(data) {
   const hasProduction = data.length > 0 && "totalProduction" in data[0];
   if (!hasProduction) { hideChart(); return; }
 
+  const isMonthly = "month" in data[0];
+
   chartContainer.style.display = "block";
   if (activeChart) { activeChart.destroy(); }
 
-  const labels = data.map((r) => r.date || r.Date || Object.values(r)[0]);
+  const labels = data.map((r) => r.month || r.date || r.Date || Object.values(r)[0]);
   const values = data.map((r) => r.totalProduction ?? r.TotalProduction ?? 0);
 
   activeChart = new Chart(chartCanvas, {
-    type: "line",
+    type: isMonthly ? "bar" : "line",
     data: {
       labels,
       datasets: [{
-        label: "Produzione giornaliera (kWh)",
+        label: isMonthly ? "Produzione mensile (kWh)" : "Produzione giornaliera (kWh)",
         data: values,
         borderColor: "#76f7c5",
-        backgroundColor: "rgba(118,247,197,0.08)",
-        borderWidth: 2,
+        backgroundColor: isMonthly ? "rgba(118,247,197,0.55)" : "rgba(118,247,197,0.08)",
+        borderWidth: isMonthly ? 1 : 2,
         pointRadius: data.length > 60 ? 0 : 3,
         pointHoverRadius: 5,
         tension: 0.3,
-        fill: true,
+        fill: !isMonthly,
       }],
     },
     options: {
@@ -259,6 +261,7 @@ async function runAction(action) {
   const routes = {
     daily: "/api/energy/daily-report-session",
     batch: "/api/energy/batch-suggestions",
+    monthly: "/api/energy/monthly-summary",
     wind: "/api/energy/wind-impact",
     forecast: "/api/energy/forecast",
     financial: "/api/energy/financial-report",
