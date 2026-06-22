@@ -3,7 +3,6 @@ package com.example.ISDProject.service;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -16,33 +15,33 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import com.example.ISDProject.resilience.CircuitBreaker;
+
+/**
+ * Proxy verso la Groq API (LLM cloud). Si occupa solo della comunicazione:
+ * costruzione della richiesta, autenticazione, fallback tra modelli e parsing della risposta.
+ * La resilienza (apertura/chiusura del circuito) è delegata al {@link CircuitBreaker}.
+ */
 @Service
 public class LlmService {
 
     private static final String GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+    // Fallback in ordine: qualità → velocità. Su quota esaurita (429) si passa al successivo.
     private static final String[] MODELS = {
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
         "mixtral-8x7b-32768"
     };
 
-    // --- Circuit Breaker ---
-    private enum State { CLOSED, OPEN, HALF_OPEN }
-
-    private volatile State circuitState = State.CLOSED;
-    private final AtomicInteger failureCount = new AtomicInteger(0);
-    private volatile long openedAt = 0L;
-
-    private static final int FAILURE_THRESHOLD = 3;
-    private static final long COOLDOWN_MS = 60_000; // 60 secondi prima di rientrare in HALF_OPEN
-
     @Value("${groq.api.key:}")
     private String apiKey;
 
     private final RestTemplate restTemplate;
+    private final CircuitBreaker circuitBreaker;
 
-    public LlmService() {
+    public LlmService(CircuitBreaker circuitBreaker) {
+        this.circuitBreaker = circuitBreaker;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
         factory.setReadTimeout((int) Duration.ofSeconds(30).toMillis());
@@ -54,7 +53,7 @@ public class LlmService {
             return "⚠️ API key Groq non configurata. Impostare GROQ_API_KEY.";
         }
 
-        if (!isCallAllowed()) {
+        if (!circuitBreaker.allowRequest()) {
             return "⚠️ Servizio AI temporaneamente sospeso (Circuit Breaker OPEN). Riprova tra qualche minuto.";
         }
 
@@ -80,7 +79,7 @@ public class LlmService {
                     if (!choices.isEmpty()) {
                         Map<?, ?> message = (Map<?, ?>) ((Map<?, ?>) choices.get(0)).get("message");
                         if (message != null) {
-                            recordSuccess();
+                            circuitBreaker.recordSuccess();
                             return message.get("content").toString().trim();
                         }
                     }
@@ -89,7 +88,7 @@ public class LlmService {
                 int status = e.getStatusCode().value();
                 System.err.println("Groq [" + model + "] HTTP " + status + ": " + e.getResponseBodyAsString());
                 if (status == 429) continue; // rate limit: prova il modello successivo
-                recordFailure();
+                circuitBreaker.recordFailure();
                 return "Errore API Groq (" + status + "): " + e.getResponseBodyAsString();
             } catch (HttpServerErrorException | ResourceAccessException e) {
                 System.err.println("Groq [" + model + "] error: " + e.getMessage());
@@ -97,37 +96,7 @@ public class LlmService {
             }
         }
 
-        recordFailure();
+        circuitBreaker.recordFailure();
         return "⚠️ Tutti i modelli Groq hanno quota esaurita. Riprova tra qualche minuto.";
-    }
-
-    private synchronized boolean isCallAllowed() {
-        if (circuitState == State.OPEN) {
-            if (System.currentTimeMillis() - openedAt >= COOLDOWN_MS) {
-                circuitState = State.HALF_OPEN;
-                System.out.println("[CircuitBreaker] → HALF_OPEN: tentativo di ripristino.");
-            } else {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private synchronized void recordSuccess() {
-        failureCount.set(0);
-        if (circuitState != State.CLOSED) {
-            circuitState = State.CLOSED;
-            System.out.println("[CircuitBreaker] → CLOSED: servizio ripristinato.");
-        }
-    }
-
-    private synchronized void recordFailure() {
-        int count = failureCount.incrementAndGet();
-        if (count >= FAILURE_THRESHOLD && circuitState != State.OPEN) {
-            circuitState = State.OPEN;
-            openedAt = System.currentTimeMillis();
-            System.out.println("[CircuitBreaker] → OPEN dopo " + count
-                    + " fallimenti. Cooldown: " + (COOLDOWN_MS / 1000) + "s.");
-        }
     }
 }
