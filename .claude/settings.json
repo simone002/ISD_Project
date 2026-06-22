@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Remove-Item \"c:\\\\Users\\\\orazi\\\\OneDrive\\\\Desktop\\\\ingegneria dei SD\\\\ISDProject\\\\src\\\\main\\\\java\\\\com\\\\example\\\\ISDProject\\\\service\\\\UserSession.java\")",
-      "Bash(Remove-Item \"c:\\\\Users\\\\orazi\\\\OneDrive\\\\Desktop\\\\ingegneria dei SD\\\\ISDProject\\\\src\\\\main\\\\java\\\\com\\\\example\\\\ISDProject\\\\util\\\\DataLoader.java\")"
-    ]
-  }
-}
