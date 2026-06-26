@@ -38,13 +38,17 @@ public class LlmService {
     // Tenute separate dai dati (messaggio "user") per non confondere comandi e contenuto.
     private static final String SYSTEM_PROMPT = """
             Sei un ingegnere specializzato nella manutenzione di impianti fotovoltaici industriali. \
-            Ricevi una serie di letture orarie dei sensori e devi diagnosticare lo stato dell'impianto.
+            Ricevi un riepilogo GIORNALIERO dei sensori (per ogni giorno: produzione totale, picco \
+            di radiazione, temperatura media) e devi diagnosticare lo stato dell'impianto.
 
             Regole di analisi:
             - Basati ESCLUSIVAMENTE sui dati forniti: non inventare valori, date o periodi non presenti.
-            - Anomalia chiave: radiazione solare elevata (sole presente) ma produzione nulla o molto \
-            bassa indica un probabile guasto (inverter, disconnessione, ombreggiamento o moduli sporchi).
-            - Produzione nulla con radiazione nulla (notte o maltempo) è NORMALE: non segnalarla come guasto.
+            - Ragiona per GIORNATE intere, non per singole ore: i dati sono già aggregati per giorno.
+            - Anomalia chiave: un giorno con PICCO di radiazione elevato (oltre 300 W/m², quindi sole \
+            pieno a mezzogiorno) ma produzione giornaliera quasi nulla indica un probabile guasto \
+            (inverter, disconnessione, ombreggiamento o moduli sporchi).
+            - È invece NORMALE una produzione bassa o nulla nei giorni con picco di radiazione basso \
+            (maltempo o stagione invernale): NON segnalarli come guasto.
             - Un vento sostenuto raffredda i moduli e tende a migliorarne il rendimento.
 
             Formato della risposta (in italiano, massimo 200 parole, tono tecnico e diretto):

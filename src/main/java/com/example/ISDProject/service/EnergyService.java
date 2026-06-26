@@ -311,35 +311,47 @@ public class EnergyService {
     }
 
     public String getSmartAnalysis(String start, String end) {
-        List<RenewableData> dataToAnalyze;
+        List<RenewableData> data;
 
         if (start != null && end != null) {
             LocalDateTime startDate = LocalDate.parse(start).atStartOfDay();
             LocalDateTime endDate = LocalDate.parse(end).atTime(23, 59, 59);
-            dataToAnalyze = repository.findByDateTimeBetween(startDate, endDate);
+            data = repository.findByDateTimeBetween(startDate, endDate);
         } else {
-            dataToAnalyze = repository.findAll().stream()
-                    .sorted((a, b) -> b.getDateTime().compareTo(a.getDateTime()))
-                    .limit(3)
-                    .collect(Collectors.toList());
+            data = repository.findAll();
         }
 
-        if (dataToAnalyze.isEmpty()) return "Nessun dato trovato nel periodo selezionato.";
+        if (data.isEmpty()) return "Nessun dato trovato nel periodo selezionato.";
 
-        if (dataToAnalyze.size() > 15) {
-            dataToAnalyze = dataToAnalyze.stream().limit(15).collect(Collectors.toList());
+        // Aggrega per giorno: è il livello a cui l'anomalia "sole pieno ma zero produzione" ha senso.
+        // Inviare le ore grezze sbilancerebbe l'analisi (notte/mattino) e genererebbe falsi positivi.
+        Map<LocalDate, List<RenewableData>> byDay = data.stream()
+                .collect(Collectors.groupingBy(d -> d.getDateTime().toLocalDate(),
+                        java.util.TreeMap::new, Collectors.toList()));
+
+        // Limita il numero di giorni per non superare il contesto del modello: tiene gli ultimi N.
+        final int MAX_DAYS = 30;
+        List<LocalDate> days = new java.util.ArrayList<>(byDay.keySet());
+        if (days.size() > MAX_DAYS) {
+            days = days.subList(days.size() - MAX_DAYS, days.size());
         }
 
-        StringBuilder dataContext = new StringBuilder();
-        dataContext.append(String.format(
-                "Letture orarie dell'impianto (%d campioni). Unità: Prod in kWh, Radiazione in W/m², Temp in °C, Vento in m/s.%n",
-                dataToAnalyze.size()));
-        for (RenewableData d : dataToAnalyze) {
-            dataContext.append(String.format("- %s | Prod %.2f kWh | Radiazione %.1f W/m² | Temp %.1f °C | Vento %.1f m/s%n",
-                    d.getDateTime(), d.getSystemProduction(), d.getRadiation(), d.getAirTemperature(), d.getWindSpeed()));
+        StringBuilder ctx = new StringBuilder();
+        ctx.append(String.format(
+                "Riepilogo giornaliero dell'impianto (%d giorni). "
+                + "Unità: Produzione totale in kWh, Picco radiazione in W/m², Temp media in °C.%n",
+                days.size()));
+        for (LocalDate day : days) {
+            List<RenewableData> dd = byDay.get(day);
+            double totalProd = dd.stream().mapToDouble(RenewableData::getSystemProduction).sum();
+            double peakRad = dd.stream()
+                    .mapToDouble(d -> d.getRadiation() != null ? d.getRadiation() : 0.0).max().orElse(0.0);
+            double avgTemp = dd.stream().mapToDouble(RenewableData::getAirTemperature).average().orElse(0.0);
+            ctx.append(String.format("- %s | Produzione %.1f kWh | Picco radiazione %.0f W/m² | Temp media %.1f °C%n",
+                    day, totalProd, peakRad, avgTemp));
         }
 
-        return llmService.askAi(dataContext.toString());
+        return llmService.askAi(ctx.toString());
     }
 
     private List<RenewableData> getFilteredData(String start, String end) {
