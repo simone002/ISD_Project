@@ -331,8 +331,11 @@ public class EnergyService {
         }
 
         StringBuilder dataContext = new StringBuilder();
+        dataContext.append(String.format(
+                "Letture orarie dell'impianto (%d campioni). Unità: Prod in kWh, Radiazione in W/m², Temp in °C, Vento in m/s.%n",
+                dataToAnalyze.size()));
         for (RenewableData d : dataToAnalyze) {
-            dataContext.append(String.format("- Data: %s, Prod: %.2f, Radiazione: %.1f, Temp: %.1f, Vento: %.1f\n",
+            dataContext.append(String.format("- %s | Prod %.2f kWh | Radiazione %.1f W/m² | Temp %.1f °C | Vento %.1f m/s%n",
                     d.getDateTime(), d.getSystemProduction(), d.getRadiation(), d.getAirTemperature(), d.getWindSpeed()));
         }
 

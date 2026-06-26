@@ -20,11 +20,13 @@ public class LoginRateLimiter {
             new ConcurrentHashMap<>();
 
     // Controlla se l'IP è bloccato
+    // Rimuove i timestamp vecchi dalla lista e verifica se il numero di tentativi
+    // falliti nell'ultimo minuto supera MAX_ATTEMPTS
     public boolean isBlocked(String ip) {
         CopyOnWriteArrayList<Long> timestamps =
-                attempts.computeIfAbsent(ip, k -> new CopyOnWriteArrayList<>());
+                attempts.computeIfAbsent(ip, k -> new CopyOnWriteArrayList<>()); // coppia chiave-valore: ip -> lista di timestamp dei tentativi falliti
         long now = System.currentTimeMillis();
-        timestamps.removeIf(t -> now - t > WINDOW_MS);
+        timestamps.removeIf(t -> now - t > WINDOW_MS); // rimuove i tentativi più vecchi di 1 minuto
         return timestamps.size() >= MAX_ATTEMPTS;
     }
 

@@ -1,5 +1,6 @@
 const state = {
   token: localStorage.getItem("heliosToken") || "",
+  refreshToken: localStorage.getItem("heliosRefreshToken") || "",
   pagedData: [],
   currentPage: 0,
 };
@@ -23,6 +24,37 @@ function setToken(token) {
     localStorage.removeItem("heliosToken");
   }
   renderAuthState();
+}
+
+function setRefreshToken(refreshToken) {
+  state.refreshToken = refreshToken || "";
+  if (state.refreshToken) {
+    localStorage.setItem("heliosRefreshToken", state.refreshToken);
+  } else {
+    localStorage.removeItem("heliosRefreshToken");
+  }
+}
+
+// Tenta di rinnovare l'access token scaduto usando il refresh token (che viene ruotato).
+async function tryRefresh() {
+  if (!state.refreshToken) return false;
+  try {
+    const resp = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ refreshToken: state.refreshToken }),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    if (data && data.token) {
+      setToken(data.token);
+      setRefreshToken(data.refreshToken);
+      return true;
+    }
+  } catch {
+    /* rete non disponibile: tratta come refresh fallito */
+  }
+  return false;
 }
 
 function renderAuthState() {
@@ -184,7 +216,7 @@ function goPage(page) {
   renderPage(page);
 }
 
-async function apiFetch(endpoint, options = {}) {
+async function apiFetch(endpoint, options = {}, isRetry = false) {
   const headers = new Headers(options.headers || {});
   if (!options.body) {
     headers.set("Accept", "application/json, text/plain, */*");
@@ -198,6 +230,15 @@ async function apiFetch(endpoint, options = {}) {
     ...options,
     headers,
   });
+
+  // Access token scaduto: prova un refresh trasparente (una sola volta) e ripeti la richiesta.
+  if (response.status === 401 && !isRetry && !endpoint.startsWith("/api/auth/")) {
+    if (await tryRefresh()) {
+      return apiFetch(endpoint, options, true);
+    }
+    setToken("");
+    setRefreshToken(""); // refresh fallito: sessione scaduta, serve un nuovo login
+  }
 
   const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
@@ -236,10 +277,30 @@ async function login() {
 
   if (data && data.token) {
     setToken(data.token);
+    setRefreshToken(data.refreshToken);
     renderOutput("Login riuscito. Token salvato nel browser.");
   } else {
     throw new Error("Token non ricevuto dal server.");
   }
+}
+
+async function logout() {
+  const refreshToken = state.refreshToken;
+  // Pulisce subito i token locali; poi avvisa il server di revocare il refresh token.
+  setToken("");
+  setRefreshToken("");
+  if (refreshToken) {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ refreshToken }),
+      });
+    } catch {
+      /* anche se la revoca lato server fallisce, i token locali sono già stati rimossi */
+    }
+  }
+  renderOutput("Logout effettuato.");
 }
 
 async function setFilter() {
@@ -286,6 +347,14 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
     await login();
   } catch (error) {
     renderOutput(`Login fallito: ${error.message}`);
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    await logout();
+  } catch (error) {
+    renderOutput(`Logout: ${error.message}`);
   }
 });
 

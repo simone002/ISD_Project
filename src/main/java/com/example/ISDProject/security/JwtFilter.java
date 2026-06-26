@@ -1,11 +1,12 @@
 package com.example.ISDProject.security;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
@@ -24,6 +25,7 @@ public class JwtFilter extends OncePerRequestFilter {
 
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
+    // Indica se il filtro deve essere applicato o meno alla richiesta corrente
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -31,6 +33,7 @@ public class JwtFilter extends OncePerRequestFilter {
                 .anyMatch(pattern -> pathMatcher.match(pattern, path));
     }
 
+    // Filtra le richieste per verificare la presenza e validità del token JWT
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -44,9 +47,13 @@ public class JwtFilter extends OncePerRequestFilter {
                 if (jwtUtil.validateToken(token)) {
                     String username = jwtUtil.extractUsername(token);
 
-                    UsernamePasswordAuthenticationToken auth = 
-                        new UsernamePasswordAuthenticationToken(username, null, new ArrayList<>());
-                    
+                    List<SimpleGrantedAuthority> authorities = jwtUtil.extractRoles(token).stream()
+                            .map(SimpleGrantedAuthority::new)
+                            .toList();
+
+                    UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(username, null, authorities);
+
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 } else {
                     // Token invalido
