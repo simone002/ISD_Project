@@ -3,7 +3,9 @@ package com.example.ISDProject.controller;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,11 +27,24 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final LoginRateLimiter rateLimiter;
     private final RefreshTokenStore refreshTokenStore;
+    private final PasswordEncoder passwordEncoder;
 
-    public AuthController(JwtUtil jwtUtil, LoginRateLimiter rateLimiter, RefreshTokenStore refreshTokenStore) {
+    // Credenziali da configurazione: la password non è nel codice, ed è memorizzata solo come hash.
+    private final String configuredUsername;
+    private final String configuredPasswordHash;
+
+    public AuthController(JwtUtil jwtUtil,
+            LoginRateLimiter rateLimiter,
+            RefreshTokenStore refreshTokenStore,
+            PasswordEncoder passwordEncoder,
+            @Value("${auth.username}") String configuredUsername,
+            @Value("${auth.password-hash}") String configuredPasswordHash) {
         this.jwtUtil = jwtUtil;
         this.rateLimiter = rateLimiter;
         this.refreshTokenStore = refreshTokenStore;
+        this.passwordEncoder = passwordEncoder;
+        this.configuredUsername = configuredUsername;
+        this.configuredPasswordHash = configuredPasswordHash;
     }
 
     @PostMapping("/login")
@@ -45,11 +60,15 @@ public class AuthController {
                     "Troppi tentativi di login. Riprova tra un minuto.");
         }
 
-        if ("admin".equals(username) && "password".equals(password)) {
+        // La password in chiaro non viene mai confrontata né memorizzata: BCrypt ricalcola l'hash
+        // della password inviata (riusando il salt contenuto nell'hash salvato) e confronta i due hash.
+        if (configuredUsername.equals(username)
+                && passwordEncoder.matches(password, configuredPasswordHash)) {
             rateLimiter.reset(ip);
             return Map.of(
-                    "token", jwtUtil.generateAccessToken(username, ADMIN_ROLES),
-                    "refreshToken", refreshTokenStore.issue(username));
+                //il refresh token viene generato e memorizzato lato server, così può essere revocato in caso di logout o compromissione.
+                    "token", jwtUtil.generateAccessToken(username, ADMIN_ROLES), // si usa questo per accedere alle API protette, ma ha vita breve (es. 15 minuti)
+                    "refreshToken", refreshTokenStore.issue(username)); // si usa per ottenere un nuovo access token quando quello vecchio è scaduto, ma ha vita più lunga (es. 7 giorni)
         }
 
         rateLimiter.recordFailure(ip);
